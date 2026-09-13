@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="de">
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>
+    Heating Plan Card · Scrolltest</title
+  ><style>
+    body {
+      font: 15px system-ui;
+      background: #edf1ef;
+      color: #213e34;
+      margin: 20px;
+    }
+    header {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    button {
+      padding: 10px;
+    }
+    main {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-top: 20px;
+    }
+    section {
+      min-width: 0;
+    }
+    .panel {
+      height: 520px;
+      overflow: auto;
+      background: white;
+      border: 1px solid #adbdb4;
+      padding: 16px;
+      border-radius: 10px;
+    }
+    output {
+      font-variant-numeric: tabular-nums;
+    }
+    @media (max-width: 700px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+  <header>
+    <h1>Scrolltest</h1>
+    <span>Statusupdates: <output id="updates">0</output></span
+    ><button id="pause">Statusupdates pausieren</button>
+  </header>
+  <p>
+    Nur Beispieldaten. Beide Ansichten erhalten alle 300 ms neue Statuswerte, einschließlich
+    Temperaturänderungen.
+  </p>
+  <main>
+    <section>
+      <h2>Thermostatauswahl</h2>
+      <div class="panel"><heatingplan-card-editor></heatingplan-card-editor></div>
+    </section>
+    <section>
+      <h2>Kartenvorschau</h2>
+      <div id="preview" class="panel"><heatingplan-card></heatingplan-card></div>
+    </section>
+  </main>
+  <script src="/dist/heatingplan-card.js"></script>
+  <script type="module" src="/demo/scroll-test.js"></script>
+</html>

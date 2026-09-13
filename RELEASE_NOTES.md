@@ -1,19 +1,10 @@
-## Heating Plan Card 1.0.0
+## Heating Plan Card 1.0.1
 
-Eigenständiger Heizplan-Manager für Home Assistant, veröffentlicht unter GNU GPL v3.
+- Die Thermostatauswahl im Konfigurationseditor springt bei Home-Assistant-Statusupdates nicht mehr nach oben.
+- Scrollposition und Eingabefokus bleiben auch beim Auswählen von Thermostaten erhalten. Unfertige Titel werden durch Statusupdates nicht überschrieben.
+- Umbenannte Räume erscheinen weiterhin aktuell; die Liste wird nur bei tatsächlichen Änderungen neu aufgebaut.
+- Die Texte „Zuhause wohlfühlen“ und „Deine Räume. Deine Zeiten.“ wurden aus dem Kartenkopf entfernt.
 
-- Raumübersicht mit Ist- und Zieltemperatur, Heizstatus und Wochenübersicht.
-- Großer Listen-Editor für Heizzeiten, am Handy bildschirmfüllend.
-- Pläne erstellen, bearbeiten, kopieren, pausieren und mit Bestätigung löschen.
-- Wochentage, Arbeitstage und freie Tage mit dem vorhandenen Arbeitskalender.
-- Rückgängig für die letzte Bearbeitung, Prüfung auf Überschneidungen und zwischenzeitliche Änderungen.
-- Bestehende Sonderregeln bleiben erhalten und sind bei nicht unterstützten Konfigurationen nur lesbar.
-- Native Web Components, keine Laufzeit-Bibliotheken und kein übernommener Code aus Scheduler Card.
+Nach dem HACS-Update das Frontend vollständig neu laden und den Karteneditor einmal neu öffnen. Die Scheduler-Integration und vorhandene Heizpläne bleiben unverändert.
 
-**Unterbau:** Die vorhandene Scheduler-Integration speichert und führt die Pläne aus. Sie muss installiert und eingerichtet sein.
-
-**HACS:** `https://github.com/leoncode-hacs/heatingplan-card` als benutzerdefiniertes Repository vom Typ Dashboard/Lovelace hinzufügen. Kartenname: **Heating Plan Card**. YAML: `type: custom:heatingplan-card`.
-
-Diese Karte kann neben Scheduler Card installiert werden. Home Assistant 2026.6.0 oder neuer erforderlich. Die Oberfläche ist zunächst auf Deutsch.
-
-Automatisierte Tests und Browserprüfungen verwenden Beispieldaten. Eine Prüfung mit realen Heizgeräten ist nach der Installation im Zielsystem erforderlich. Direkte Temperaturänderungen sind keine zeitlich garantierten Boosts.
+Die Scrollkorrektur gilt auch für die Karte und ihre Vorschau: unveränderte Inhalte werden nicht mehr ersetzt; bei tatsächlichen Änderungen bleiben die Scrollpositionen der umgebenden Home-Assistant-Ansicht erhalten.

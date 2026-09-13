@@ -80,6 +80,7 @@ class HeatingPlanCard extends HTMLElement {
   private refreshId = 0;
   private timer?: ReturnType<typeof setInterval>;
   private queued = false;
+  private renderedMarkup = '';
   private api = new SchedulerApi(() => {
     if (!this.currentHass) throw new Error('Home Assistant ist noch nicht verbunden.');
     return this.currentHass;
@@ -212,17 +213,29 @@ class HeatingPlanCard extends HTMLElement {
     const oldScroll = this.root.querySelector('.dialog-body')?.scrollTop || 0;
     const oldFocus = this.root.activeElement?.getAttribute('aria-label');
     const oldModal = this.root.querySelector<HTMLDialogElement>('dialog');
-    oldModal?.close();
     const rooms = this.rooms(),
       room = this.selected();
     if (room) this.room = room.id;
     const title = this.config.title || 'Heizplan';
-    this.root.innerHTML = `<style>${styles}</style><section class="app" ${this.edit || this.quick || this.deletion ? 'inert' : ''} aria-label="${escape(title)}">
-      <header class="top"><div><p class="eyebrow">Zuhause wohlfühlen</p><h1>${escape(title)}</h1><p class="muted">Deine Räume. Deine Zeiten.</p></div><div class="top-tools"><button class="btn" data-action="refresh" aria-label="Heizpläne neu laden" ${this.busy ? 'disabled' : ''}>${icon('refresh')}</button><button class="btn primary" data-action="new" aria-label="Neuer Plan" ${!room || !this.loaded || this.busy || this.error ? 'disabled' : ''}>${icon('plus')}<span class="text">Neuer Plan</span></button></div></header>
+    const markup = `<style>${styles}</style><section class="app" ${this.edit || this.quick || this.deletion ? 'inert' : ''} aria-label="${escape(title)}">
+      <header class="top"><div><h1>${escape(title)}</h1></div><div class="top-tools"><button class="btn" data-action="refresh" aria-label="Heizpläne neu laden" ${this.busy ? 'disabled' : ''}>${icon('refresh')}</button><button class="btn primary" data-action="new" aria-label="Neuer Plan" ${!room || !this.loaded || this.busy || this.error ? 'disabled' : ''}>${icon('plus')}<span class="text">Neuer Plan</span></button></div></header>
       ${this.error ? `<div role="alert" class="status error"><span>${escape(this.error)}</span><button class="btn small" data-action="refresh">Erneut versuchen</button></div>` : ''}
       ${this.message ? `<div role="status" class="status"><span>${icon('check')} ${escape(this.message)}</span>${this.undo ? '<button class="btn small" data-action="undo">Rückgängig</button>' : ''}<button class="btn small" aria-label="Meldung schließen" data-action="dismiss">${icon('close')}</button></div>` : ''}
       ${!this.currentHass || (!this.loaded && !this.error) ? '<div class="loading" role="status">Heizpläne werden geladen …<div class="skeleton"></div><div class="skeleton"></div></div>' : !room ? `<div class="empty-state">${icon('home')}<h2>Noch keine Thermostate</h2><p>Wähle in der Kartenkonfiguration die Thermostate aus, die du hier steuern möchtest.</p></div>` : `<div class="layout"><nav class="rooms" aria-label="Räume"><p class="section-label">Meine Räume · ${rooms.length}</p>${rooms.map((r) => this.roomHtml(r)).join('')}</nav><main class="main"><label class="field room-select">Raum<select id="room-select" aria-label="Raum auswählen">${rooms.map((r) => `<option value="${escape(r.id)}" ${r.id === room.id ? 'selected' : ''}>${escape(r.name)}${rooms.filter((other) => other.name === r.name).length > 1 ? ` · ${escape(r.detail)}` : ''}</option>`).join('')}</select></label>${this.roomContent(room)}</main></div>`}
     </section>${this.edit ? this.editorHtml(this.edit) : this.quick ? this.quickHtml() : this.deletion ? this.deleteHtml() : ''}`;
+    // hass updates often concern unrelated entities. Leave an unchanged card
+    // in place so the browser can retain its scroll anchors and focus.
+    if (markup === this.renderedMarkup) return;
+    const scrollPositions: { element: HTMLElement; top: number; left: number }[] = [];
+    let ancestor: HTMLElement | null = this;
+    while (ancestor) {
+      scrollPositions.push({ element: ancestor, top: ancestor.scrollTop, left: ancestor.scrollLeft });
+      const tree: Node = ancestor.getRootNode();
+      ancestor = ancestor.parentElement || (tree instanceof ShadowRoot ? (tree.host as HTMLElement) : null);
+    }
+    oldModal?.close();
+    this.root.innerHTML = markup;
+    this.renderedMarkup = markup;
     const modal = this.root.querySelector<HTMLDialogElement>('dialog');
     if (modal) {
       modal.addEventListener('cancel', (event) => {
@@ -236,6 +249,12 @@ class HeatingPlanCard extends HTMLElement {
         [...modal.querySelectorAll<HTMLElement>('[aria-label]')]
           .find((el) => el.getAttribute('aria-label') === oldFocus)
           ?.focus({ preventScroll: true });
+    }
+    // HA's card-preview scroller can live above multiple shadow roots. Restore
+    // those containers after real content changes as well as form updates.
+    for (const { element, top, left } of scrollPositions) {
+      if (element.scrollTop !== top) element.scrollTop = top;
+      if (element.scrollLeft !== left) element.scrollLeft = left;
     }
   }
   private roomHtml(room: Room) {
@@ -610,47 +629,100 @@ class HeatingPlanEditor extends HTMLElement {
   private root = this.attachShadow({ mode: 'open' });
   private config: CardConfig = { type: 'custom:heatingplan-card' };
   private state?: Hass;
-  setConfig(config: CardConfig) {
-    this.config = { ...config };
-    this.render();
+  private roomSignature = '';
+
+  constructor() {
+    super();
+    this.root.addEventListener('change', (event) => this.handleChange(event));
   }
+
+  setConfig(config: CardConfig) {
+    const titleChanged = config.title !== this.config.title;
+    this.config = { ...config, ...(config.entities ? { entities: [...config.entities] } : {}) };
+    this.update(titleChanged);
+  }
+
   set hass(hass: Hass) {
     this.state = hass;
-    this.render();
+    this.update();
   }
+
   connectedCallback() {
-    this.render();
+    this.update(true);
   }
-  private render() {
-    this.root.innerHTML = `<style>:host{display:block;font:inherit}label{display:block;margin:12px 0}input[type=text]{display:block;width:100%;box-sizing:border-box;padding:12px;border:1px solid var(--divider-color,#ccc);border-radius:8px;background:var(--card-background-color,#fff);color:var(--primary-text-color,#222)}.rooms{max-height:300px;overflow:auto}p{color:var(--secondary-text-color,#666);font-size:13px}input[type=checkbox]{margin-right:10px}</style><section><label>Titel<input type="text" id="title" value="${escape(this.config.title || 'Heizplan')}"></label><label><input type="checkbox" id="all" ${this.config.entities === undefined ? 'checked' : ''}>Alle Thermostate anzeigen</label><div class="rooms">${
-      this.state
-        ? roomList(this.state)
-            .map(
-              (room) =>
-                `<label><input type="checkbox" data-id="${escape(room.id)}" ${this.config.entities === undefined || this.config.entities.includes(room.id) ? 'checked' : ''} ${this.config.entities === undefined ? 'disabled' : ''}>${escape(room.name)} · ${escape(room.detail)}</label>`,
-            )
-            .join('')
-        : ''
-    }</div><p>Wähle vorzugsweise die Better-Thermostat-Entitäten aus, damit jeder Raum nur einmal erscheint. Die Scheduler-Integration muss installiert sein.</p></section>`;
-    this.root.querySelector('section')!.onchange = (event) => {
-      const el = event.target as HTMLInputElement;
-      if (el.id === 'title') this.config.title = el.value;
-      else if (el.id === 'all') {
-        if (el.checked) delete this.config.entities;
-        else this.config.entities = this.state ? roomList(this.state).map((room) => room.id) : [];
-      } else if (el.dataset.id)
-        this.config.entities = [...this.root.querySelectorAll<HTMLInputElement>('[data-id]:checked')].map(
-          (input) => input.dataset.id!,
-        );
-      this.dispatchEvent(
-        new CustomEvent('config-changed', {
-          detail: { config: { ...this.config } },
-          bubbles: true,
-          composed: true,
-        }),
-      );
-      if (el.id === 'all') this.render();
-    };
+
+  private update(syncTitle = false) {
+    // Keep the scroll container and form inputs alive across frequent hass
+    // updates and configuration echoes from Home Assistant.
+    if (!this.root.querySelector('section')) {
+      this.root.innerHTML = `<style>:host{display:block;font:inherit}label{display:block;margin:12px 0}input[type=text]{display:block;width:100%;box-sizing:border-box;padding:12px;border:1px solid var(--divider-color,#ccc);border-radius:8px;background:var(--card-background-color,#fff);color:var(--primary-text-color,#222)}.rooms{max-height:300px;overflow:auto}p{color:var(--secondary-text-color,#666);font-size:13px}input[type=checkbox]{margin-right:10px}</style><section><label>Titel<input type="text" id="title"></label><label><input type="checkbox" id="all">Alle Thermostate anzeigen</label><div class="rooms"></div><p>Wähle vorzugsweise die Better-Thermostat-Entitäten aus, damit jeder Raum nur einmal erscheint. Die Scheduler-Integration muss installiert sein.</p></section>`;
+      syncTitle = true;
+    }
+    if (syncTitle)
+      this.root.querySelector<HTMLInputElement>('#title')!.value = this.config.title || 'Heizplan';
+
+    const rooms = this.state ? roomList(this.state) : [];
+    const signature = JSON.stringify(rooms.map((room) => [room.id, room.name, room.detail]));
+    const list = this.root.querySelector<HTMLElement>('.rooms')!;
+    if (signature !== this.roomSignature) {
+      const scrollTop = list.scrollTop;
+      const focusedId = (this.root.activeElement as HTMLElement | null)?.dataset.id;
+      const fragment = this.ownerDocument.createDocumentFragment();
+      for (const room of rooms) {
+        const label = this.ownerDocument.createElement('label');
+        const input = this.ownerDocument.createElement('input');
+        input.type = 'checkbox';
+        input.dataset.id = room.id;
+        label.append(input, this.ownerDocument.createTextNode(`${room.name} · ${room.detail}`));
+        fragment.append(label);
+      }
+      list.replaceChildren(fragment);
+      this.roomSignature = signature;
+      this.syncSelection();
+      if (focusedId)
+        [...list.querySelectorAll<HTMLInputElement>('input')]
+          .find((input) => input.dataset.id === focusedId)
+          ?.focus({ preventScroll: true });
+      list.scrollTop = scrollTop;
+    } else {
+      this.syncSelection();
+    }
+  }
+
+  private syncSelection() {
+    const all = this.config.entities === undefined;
+    this.root.querySelector<HTMLInputElement>('#all')!.checked = all;
+    for (const input of this.root.querySelectorAll<HTMLInputElement>('[data-id]')) {
+      input.checked = all || this.config.entities!.includes(input.dataset.id!);
+      input.disabled = all;
+    }
+  }
+
+  private handleChange(event: Event) {
+    const el = event.target as HTMLInputElement;
+    if (el.id === 'title') this.config.title = el.value;
+    else if (el.id === 'all') {
+      if (el.checked) delete this.config.entities;
+      else this.config.entities = this.state ? roomList(this.state).map((room) => room.id) : [];
+    } else if (el.dataset.id) {
+      const selected = new Set(this.config.entities || []);
+      if (el.checked) selected.add(el.dataset.id);
+      else selected.delete(el.dataset.id);
+      this.config.entities = [...selected];
+    } else return;
+    this.syncSelection();
+    this.dispatchEvent(
+      new CustomEvent('config-changed', {
+        detail: {
+          config: {
+            ...this.config,
+            ...(this.config.entities ? { entities: [...this.config.entities] } : {}),
+          },
+        },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 }
 customElements.define('heatingplan-card', HeatingPlanCard);

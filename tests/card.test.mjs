@@ -191,3 +191,187 @@ test('deleting a plan requires confirmation and verifies removal', async () => {
     await m.close();
   }
 });
+
+async function mountEditor() {
+  const b = backend();
+  for (let i = 0; i < 40; i++) {
+    const id = `climate.room_${i}`;
+    b.hass.states[id] = {
+      entity_id: id,
+      state: 'heat',
+      attributes: { friendly_name: `Raum ${String(i).padStart(2, '0')} Thermostat`, current_temperature: 20 },
+    };
+  }
+  const m = await mount(b);
+  const editor = m.w.document.createElement('heatingplan-card-editor');
+  editor.setConfig({ type: 'custom:heatingplan-card', title: 'Unser Heizplan', entities: ['climate.test'] });
+  editor.hass = b.hass;
+  m.w.document.body.append(editor);
+  return { ...m, b, editor, editorRoot: editor.shadowRoot };
+}
+
+test('editor retains scroll, focused row and DOM nodes across repeated hass updates', async () => {
+  const m = await mountEditor();
+  try {
+    const list = m.editorRoot.querySelector('.rooms');
+    const row = m.editorRoot.querySelector('[data-id="climate.room_25"]');
+    row.focus();
+    list.scrollTop = 650;
+    for (let i = 0; i < 8; i++)
+      m.editor.hass = {
+        ...m.b.hass,
+        states: {
+          ...m.b.hass.states,
+          'sensor.tick': { entity_id: 'sensor.tick', state: String(i), attributes: {} },
+        },
+      };
+    assert.ok(m.editorRoot.querySelector('.rooms') === list, 'scroll container must be retained');
+    assert.ok(m.editorRoot.querySelector('[data-id="climate.room_25"]') === row, 'row must be retained');
+    assert.equal(list.scrollTop, 650);
+    assert.ok(m.editorRoot.activeElement === row, 'focused row must be retained');
+  } finally {
+    m.editor.remove();
+    await m.close();
+  }
+});
+
+test('editor keeps scroll when Home Assistant echoes a changed checkbox configuration', async () => {
+  const m = await mountEditor();
+  try {
+    const list = m.editorRoot.querySelector('.rooms');
+    list.scrollTop = 480;
+    m.editor.addEventListener('config-changed', (event) => m.editor.setConfig(event.detail.config));
+    const input = m.editorRoot.querySelector('[data-id="climate.room_25"]');
+    input.checked = true;
+    input.dispatchEvent(new m.w.Event('change', { bubbles: true }));
+    assert.ok(m.editorRoot.querySelector('.rooms') === list, 'scroll container must be retained');
+    assert.equal(list.scrollTop, 480);
+    assert.equal(input.checked, true);
+    assert.equal(m.editorRoot.querySelector('[data-id="climate.test"]').checked, true);
+  } finally {
+    m.editor.remove();
+    await m.close();
+  }
+});
+
+test('editor leaves an uncommitted title and selection intact during state updates', async () => {
+  const m = await mountEditor();
+  try {
+    const title = m.editorRoot.querySelector('#title');
+    title.focus();
+    title.value = 'Noch nicht fertig';
+    title.setSelectionRange(5, 10);
+    m.editor.hass = { ...m.b.hass };
+    m.editor.setConfig({
+      type: 'custom:heatingplan-card',
+      title: 'Unser Heizplan',
+      entities: ['climate.test'],
+    });
+    assert.ok(m.editorRoot.querySelector('#title') === title, 'title input must be retained');
+    assert.equal(title.value, 'Noch nicht fertig');
+    assert.equal(title.selectionStart, 5);
+    assert.equal(title.selectionEnd, 10);
+    assert.ok(m.editorRoot.activeElement === title, 'title focus must be retained');
+  } finally {
+    m.editor.remove();
+    await m.close();
+  }
+});
+
+test('editor refreshes renamed rooms without resetting scroll or losing focused entity', async () => {
+  const m = await mountEditor();
+  try {
+    const list = m.editorRoot.querySelector('.rooms');
+    list.scrollTop = 450;
+    m.editorRoot.querySelector('[data-id="climate.room_25"]').focus();
+    m.editor.hass = {
+      ...m.b.hass,
+      states: {
+        ...m.b.hass.states,
+        'climate.room_25': {
+          ...m.b.hass.states['climate.room_25'],
+          attributes: { friendly_name: 'Neuer Raumname' },
+        },
+      },
+    };
+    assert.ok(m.editorRoot.querySelector('.rooms') === list, 'scroll container must be retained');
+    assert.equal(list.scrollTop, 450);
+    assert.equal(m.editorRoot.activeElement.dataset.id, 'climate.room_25');
+    assert.match(m.editorRoot.textContent, /Neuer Raumname/);
+  } finally {
+    m.editor.remove();
+    await m.close();
+  }
+});
+
+test('card keeps its DOM across unrelated hass updates and repeated scheduler snapshots', async () => {
+  const { schedule } = fixture();
+  schedule.weekdays = ['daily'];
+  const b = backend([schedule]);
+  const m = await mount(b);
+  try {
+    const app = m.root.querySelector('.app');
+    for (let i = 0; i < 5; i++) {
+      m.card.hass = {
+        ...b.hass,
+        states: {
+          ...b.hass.states,
+          'sensor.tick': { entity_id: 'sensor.tick', state: String(i), attributes: {} },
+        },
+      };
+      b.emit();
+      await settle();
+      assert.ok(m.root.querySelector('.app') === app, 'unchanged card content must not be rebuilt');
+    }
+    m.card.hass = {
+      ...b.hass,
+      states: {
+        ...b.hass.states,
+        'climate.test': {
+          ...b.hass.states['climate.test'],
+          attributes: { ...b.hass.states['climate.test'].attributes, current_temperature: 22.5 },
+        },
+      },
+    };
+    await settle();
+    assert.match(m.root.querySelector('.readings').textContent, /22,5/);
+  } finally {
+    await m.close();
+  }
+});
+
+test('card restores preview and document scrolling across shadow-root boundaries', async () => {
+  const m = await mount(backend());
+  try {
+    const host = m.w.document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    const scroller = m.w.document.createElement('div');
+    shadow.append(scroller);
+    m.w.document.body.append(host);
+    scroller.append(m.card);
+    await settle();
+    scroller.scrollTop = 370;
+    host.scrollTop = 120;
+    m.w.document.documentElement.scrollTop = 210;
+    const descriptor = Object.getOwnPropertyDescriptor(m.w.ShadowRoot.prototype, 'innerHTML');
+    Object.defineProperty(m.root, 'innerHTML', {
+      get() {
+        return descriptor.get.call(this);
+      },
+      set(value) {
+        descriptor.set.call(this, value);
+        scroller.scrollTop = 0;
+        host.scrollTop = 0;
+        m.w.document.documentElement.scrollTop = 0;
+      },
+    });
+    m.card.setConfig({ type: 'custom:heatingplan-card', title: 'Changed preview title' });
+    await settle();
+    assert.equal(scroller.scrollTop, 370);
+    assert.equal(host.scrollTop, 120);
+    assert.equal(m.w.document.documentElement.scrollTop, 210);
+    host.remove();
+  } finally {
+    await m.close();
+  }
+});

@@ -39,3 +39,14 @@ The Scheduler protocol was checked against its documented services and backend
 API definitions. An authenticated live installation, permissions for the intended
 user, actual scheduler version, cache refresh and real device behavior should be
 verified after installing the card. The checks above do not establish those facts.
+
+## Version 1.0.1 — scroll regression
+
+Six additional regression tests cover stable editor nodes, scroll retention on
+hass updates and configuration echoes, unfinished title input, registry renames,
+unchanged card snapshots and preview scrollers across shadow roots (49 tests total).
+
+`demo/scroll-test.html` exercises both editor and card preview with a fresh hass
+object and a changing temperature every 300 ms. Browser checks confirmed that
+both panels remain scrolled across repeated updates and checkbox configuration
+changes. The two promotional header lines have been removed.
