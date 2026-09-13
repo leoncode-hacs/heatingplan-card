@@ -79,6 +79,17 @@ let plans = [
     ],
   ),
 ];
+// Calendar fixture: a paused workday plan plus free-day plan, with Wednesday
+// acting as a configured holiday. All services remain local demo responses.
+const calendarDemo = new URLSearchParams(location.search).has('calendar');
+const demoWorkday = (date) => ![0, 3, 6].includes(new Date(`${date}T12:00:00Z`).getUTCDay());
+if (calendarDemo) {
+  plans[0].weekdays = ['workday'];
+  plans[0].enabled = false;
+  plans[0].name = 'Werktags heizen';
+  plans[1].weekdays = ['weekend'];
+  plans[1].name = 'Freie Tage';
+}
 let listeners = new Set();
 const hass = {
   states: {
@@ -110,6 +121,10 @@ const hass = {
   },
   callWS: async (msg) => {
     await new Promise((r) => setTimeout(r, 80));
+    if (calendarDemo && msg.type === 'call_service' && msg.service === 'check_date')
+      return {
+        response: { 'binary_sensor.workday_sensor': { workday: demoWorkday(msg.service_data.check_date) } },
+      };
     if (msg.type === 'scheduler') return clone(plans);
     if (msg.type === 'scheduler/item')
       return clone(plans.find((plan) => plan.schedule_id === msg.schedule_id));
@@ -156,6 +171,14 @@ function sync() {
   hass.states = { ...hass.states };
   card.hass = { ...hass };
   for (const listener of listeners) listener({});
+}
+if (calendarDemo) {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(new Date());
+  hass.states['binary_sensor.workday_sensor'] = {
+    entity_id: 'binary_sensor.workday_sensor',
+    state: demoWorkday(today) ? 'on' : 'off',
+    attributes: {},
+  };
 }
 card.setConfig({ type: 'custom:heatingplan-card', title: 'Unser Heizplan' });
 sync();

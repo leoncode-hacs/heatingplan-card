@@ -5,7 +5,6 @@ import {
   DAYS,
   DAY_NAMES,
   SHORT_DAYS,
-  applies,
   clock,
   conflicts,
   currentClock,
@@ -29,6 +28,17 @@ import {
   toDraft,
   validateDraft,
 } from './model.ts';
+import {
+  calendarKey,
+  loadCalendarWeek,
+  localDate,
+  scheduleDay,
+  shortDate,
+  usesWorkday,
+  weekDates,
+  type CalendarWeek,
+  type DayMatch,
+} from './calendar.ts';
 import { SchedulerApi } from './api.ts';
 import { styles } from './styles.ts';
 declare const __VERSION__: string;
@@ -73,6 +83,11 @@ class HeatingPlanCard extends HTMLElement {
   private busy = false;
   private room = '';
   private day = 0;
+  private weekOffset = 0;
+  private calendar: CalendarWeek = {};
+  private calendarKey = '';
+  private calendarExpires = 0;
+  private calendarRequest = 0;
   private edit?: EditSession;
   private quick?: { value: number; mode: 'heat' | 'off'; error: string };
   private deletion?: { schedule: Schedule; error: string };
@@ -115,6 +130,7 @@ class HeatingPlanCard extends HTMLElement {
     if (this.isConnected) {
       this.subscribe();
       if (first) void this.refresh();
+      void this.refreshCalendar();
     }
   }
   get hass() {
@@ -139,6 +155,7 @@ class HeatingPlanCard extends HTMLElement {
       void this.refresh();
     }
     this.timer = setInterval(() => {
+      void this.refreshCalendar();
       if (!this.edit && !this.quick && !this.deletion) this.requestRender();
       if (!this.unsubscribe && this.currentHass && !this.busy) void this.refresh();
     }, 60000);
@@ -148,6 +165,8 @@ class HeatingPlanCard extends HTMLElement {
     this.unsubscribe = undefined;
     this.subscribedConnection = undefined;
     this.refreshId++;
+    this.calendarRequest++;
+    this.calendarKey = '';
     if (this.timer) clearInterval(this.timer);
   }
   private requestRender() {
@@ -189,12 +208,28 @@ class HeatingPlanCard extends HTMLElement {
       const schedules = await this.api.list();
       if (request !== this.refreshId || !this.isConnected) return;
       this.schedules = schedules;
+      void this.refreshCalendar();
       this.loaded = true;
       this.error = '';
     } catch (error) {
       if (request !== this.refreshId) return;
       this.error = this.errorText(error);
     }
+    if (!this.edit && !this.quick && !this.deletion) this.requestRender();
+  }
+  private async refreshCalendar(force = false) {
+    if (!this.currentHass || !this.isConnected || !this.schedules.some(usesWorkday)) return;
+    const dates = weekDates(this.hass, this.weekOffset);
+    const key = calendarKey(this.hass, dates);
+    if (!force && key === this.calendarKey && Date.now() < this.calendarExpires) return;
+    const request = ++this.calendarRequest;
+    this.calendarKey = key;
+    this.calendarExpires = Date.now() + 300000;
+    this.calendar = {};
+    if (!this.edit && !this.quick && !this.deletion) this.requestRender();
+    const result = await loadCalendarWeek(this.hass, dates);
+    if (request !== this.calendarRequest || !this.isConnected) return;
+    this.calendar = result;
     if (!this.edit && !this.quick && !this.deletion) this.requestRender();
   }
   private errorText(error: unknown) {
@@ -264,38 +299,55 @@ class HeatingPlanCard extends HTMLElement {
     return `<button class="room ${room.id === this.room ? 'active' : ''}" data-action="room" data-id="${escape(room.id)}" aria-current="${room.id === this.room ? 'true' : 'false'}"><span class="room-icon">${icon(room.state.state !== 'off' && room.state.attributes.hvac_action === 'heating' ? 'heat' : 'home')}</span><span class="room-copy"><strong>${escape(room.name)}</strong><small>${room.state.state !== 'off' && room.state.attributes.hvac_action === 'heating' ? '<span class="dot"></span>Heizt gerade' : escape(room.detail)}</small></span><span class="room-temp">${temperature(room.state.attributes.current_temperature)}°</span></button>`;
   }
   private roomContent(room: Room) {
-    const all = this.schedules.filter((s) => targets(s).includes(room.id)),
-      now = currentClock(this.hass);
-    const visible = all.filter((s) => applies(s, this.day)),
-      special = all.filter((s) => s.weekdays.some((day) => !DAYS.includes(day) && day !== 'daily'));
+    const all = this.schedules.filter((s) => targets(s).includes(room.id));
+    const dates = weekDates(this.hass, this.weekOffset);
+    const date = dates[this.day];
+    const visible = all.filter((s) => scheduleDay(s, date, this.calendar) !== 'no');
     const active = all.filter((s) => isEnabled(s, this.hass));
-    const next = nextChange(this.schedules, this.hass, room.id);
-    const overlap = all.filter((s) => applies(s, this.day) && isEnabled(s, this.hass)).length > 1;
+    const next = active.some(usesWorkday) ? null : nextChange(this.schedules, this.hass, room.id);
+    const overlap =
+      all.filter((s) => scheduleDay(s, date, this.calendar) === 'yes' && isEnabled(s, this.hass)).length > 1;
     const unavailable = ['unavailable', 'unknown'].includes(room.state.state);
     return `<section class="hero"><div class="hero-title"><div class="row" style="margin-bottom:5px"><p class="eyebrow">Raumübersicht</p></div><h2>${escape(room.name)}</h2><small>${escape(room.detail)}</small><div class="readings"><div class="reading"><small>Raumtemperatur</small><strong>${temperature(room.state.attributes.current_temperature)} <span>${escape(this.unit())}</span></strong></div><div class="reading"><small>Aktuell eingestellt</small><strong>${room.state.state === 'off' ? 'Aus' : `${temperature(room.state.attributes.temperature)} <span>${escape(this.unit())}</span>`}</strong></div></div></div><div style="text-align:right"><span class="pill ${unavailable ? 'warn' : ''}">${unavailable ? 'Nicht erreichbar' : room.state.state !== 'off' && room.state.attributes.hvac_action === 'heating' ? `${icon('heat')} Heizt gerade` : room.state.state === 'off' ? 'Heizung aus' : active.length ? 'Heizplan aktiv' : 'Kein aktiver Plan'}</span><br><button class="btn small" style="margin-top:14px" data-action="quick" ${unavailable || this.busy ? 'disabled' : ''}>Heizung steuern</button></div></section>
-    <div class="next">${icon('clock')}<span>${overlap ? 'Mehrere Pläne sind gleichzeitig aktiv. Bitte prüfe die Heizzeiten.' : next ? `Nächster Heizabschnitt <strong>${next.minutes < 1440 ? `in ${Math.floor(next.minutes / 60) ? `${Math.floor(next.minutes / 60)} Std. ` : ''}${next.minutes % 60} Min.` : `in ${Math.floor(next.minutes / 1440)} Tagen`}</strong> · ${next.off ? 'Heizung aus' : `${temperature(next.temperature)} ${escape(this.unit())}`}` : active.length ? 'Für besondere Heizpläne findest du die Regeln unten.' : 'Ohne aktiven Heizplan bleibt die eingestellte Temperatur bestehen.'}</span></div>
-    <div class="between week-head"><div><p class="eyebrow">Deine Woche</p><h3>${DAY_NAMES[this.day]}</h3></div><button class="btn quiet small" data-action="today">Heute</button></div><div class="day-tabs" role="group" aria-label="Wochentag">${DAYS.map((_, i) => `<button class="day-tab ${i === this.day ? 'active' : ''}" data-action="day" data-index="${i}" aria-pressed="${i === this.day}">${SHORT_DAYS[i]}${i === now.day ? '<span class="today"></span>' : ''}</button>`).join('')}</div>
-    <div class="week-grid" aria-label="Wochenübersicht">${DAYS.map((_, i) => {
-      const plans = all.filter((s) => applies(s, i) && isEnabled(s, this.hass) && !editProblem(s));
-      return `<div class="week-column ${i === now.day ? 'today-col' : ''}"><small>${SHORT_DAYS[i]}</small>${plans.length === 1 ? plans[0].timeslots.map((slot) => `<div class="segment ${Number(slot.actions[0].service_data?.temperature) >= 20 ? 'warm' : ''}"><span>${escape(slot.start.slice(0, 5))}</span><strong>${slotIsOff(slot) ? 'Aus' : `${temperature(slot.actions[0].service_data?.temperature)}°`}</strong></div>`).join('') : `<div class="segment empty">${plans.length > 1 ? 'Mehrere Pläne' : 'Kein Tagesplan'}</div>`}</div>`;
-    }).join('')}</div>
-    ${visible.length ? visible.map((s) => this.planHtml(s)).join('') : `<div class="empty-state">${icon('sun')}<h3>Freiraum für deinen Tag</h3><p>Für ${DAY_NAMES[this.day]} gibt es noch keinen festen Tagesplan.</p><button class="btn primary" data-action="new-day">${icon('plus')} Heizzeiten festlegen</button></div>`}
-    ${special.length ? `<p class="section-label" style="margin-top:22px">Pläne nach Arbeitskalender</p>${special.map((s) => this.planHtml(s)).join('')}` : ''}
+    <div class="next">${icon('clock')}<span>${overlap ? 'Mehrere Pläne sind gleichzeitig aktiv. Bitte prüfe die Heizzeiten.' : next ? `Nächster Heizabschnitt <strong>${next.minutes < 1440 ? `in ${Math.floor(next.minutes / 60) ? `${Math.floor(next.minutes / 60)} Std. ` : ''}${next.minutes % 60} Min.` : `in ${Math.floor(next.minutes / 1440)} Tagen`}</strong> · ${next.off ? 'Heizung aus' : `${temperature(next.temperature)} ${escape(this.unit())}`}` : active.length ? 'Die nächste Schaltung wird vom aktiven Heizplan bestimmt.' : 'Ohne aktiven Heizplan bleibt die eingestellte Temperatur bestehen.'}</span></div>
+    <div class="between week-head"><div><p class="eyebrow">Deine Woche · ${shortDate(dates[0])}–${shortDate(dates[6])}</p><h3>${DAY_NAMES[this.day]}, ${shortDate(date)}</h3></div><div class="week-navigation"><button class="btn quiet small" data-action="previous-week" aria-label="Vorherige Woche">‹</button><button class="btn quiet small" data-action="today">Heute</button><button class="btn quiet small" data-action="next-week" aria-label="Nächste Woche">›</button></div></div><div class="day-tabs" role="group" aria-label="Wochentag">${DAYS.map((_, i) => `<button class="day-tab ${i === this.day ? 'active' : ''}" data-action="day" data-index="${i}" aria-pressed="${i === this.day}">${SHORT_DAYS[i]}<small>${shortDate(dates[i])}</small>${dates[i] === localDate(this.hass) ? '<span class="today"></span>' : ''}</button>`).join('')}</div>
+    <div class="week-grid" aria-label="Wochenübersicht">${dates.map((date, i) => this.weekColumn(all, date, i)).join('')}</div>
+    ${visible.length ? visible.map((plan) => this.planHtml(plan, scheduleDay(plan, date, this.calendar))).join('') : `<div class="empty-state">${icon('sun')}<h3>Kein Heizplan vorhanden</h3><p>Für ${DAY_NAMES[this.day]}, ${shortDate(date)} ist kein Heizplan zugeordnet.</p><button class="btn primary" data-action="new-day">${icon('plus')} Heizzeiten festlegen</button></div>`}
     <p class="footnote">Ein pausierter Plan schaltet die Heizung nicht aus. Deine Zeitpläne laufen in Home Assistant weiter, auch wenn du diese Ansicht schließt.</p>`;
   }
-  private planHtml(plan: Schedule) {
+  private weekColumn(plans: Schedule[], date: string, day: number) {
+    const visible = plans.filter((s) => scheduleDay(s, date, this.calendar) !== 'no');
+    return `<div class="week-column ${date === localDate(this.hass) ? 'today-col' : ''}"><small>${SHORT_DAYS[day]} · ${shortDate(date)}</small>${
+      visible.length
+        ? visible
+            .map((plan) => {
+              const match = scheduleDay(plan, date, this.calendar),
+                enabled = isEnabled(plan, this.hass);
+              return `<div class="week-plan ${enabled ? '' : 'paused'} ${match === 'unknown' ? 'uncertain' : ''}"><div class="week-plan-label"><strong>${escape(plan.name || 'Heizplan')}</strong><span>${enabled ? 'Aktiv' : 'Pausiert'}</span>${this.calendarNote(plan, match, date)}</div>${editProblem(plan) ? '<div class="segment empty">Sonderregeln</div>' : plan.timeslots.map((slot) => `<div class="segment ${Number(slot.actions[0].service_data?.temperature) >= 20 ? 'warm' : ''}"><span>${escape(slot.start.slice(0, 5))}</span><strong>${slotIsOff(slot) ? 'Aus' : `${temperature(slot.actions[0].service_data?.temperature)}°`}</strong></div>`).join('')}</div>`;
+            })
+            .join('')
+        : '<div class="segment empty">Kein Heizplan</div>'
+    }</div>`;
+  }
+  private calendarNote(plan: Schedule, match: DayMatch, date: string) {
+    if (match === 'unknown') return '<span class="calendar-note">Zuordnung noch offen</span>';
+    if (usesWorkday(plan))
+      return `<span class="calendar-note">${this.calendar[date]?.source === 'standard' ? 'Standardwoche' : 'Arbeitskalender'}</span>`;
+    return '';
+  }
+  private planHtml(plan: Schedule, match: DayMatch = 'yes') {
     const problem = editProblem(plan),
       enabled = isEnabled(plan, this.hass),
       now = currentClock(this.hass);
-    return `<article class="plan ${enabled ? '' : 'paused'}"><div class="plan-head"><div><h3>${escape(plan.name || 'Heizplan')}</h3><small>${escape(dayLabel(plan.weekdays))}</small></div><span class="pill ${problem ? 'warn' : ''}">${problem ? 'Sonderregeln' : enabled ? 'Aktiv' : 'Pausiert'}</span></div><div class="plan-body">${
+    return `<article class="plan ${enabled ? '' : 'paused'} ${match === 'unknown' ? 'uncertain' : ''}"><div class="plan-head"><div><h3>${escape(plan.name || 'Heizplan')}</h3><small>${escape(dayLabel(plan.weekdays))}</small>${this.calendarNote(plan, match, weekDates(this.hass, this.weekOffset)[this.day])}</div><span class="pill ${match === 'unknown' ? 'warn' : ''}">${enabled ? 'Aktiv' : 'Pausiert'}</span></div><div class="plan-body">${
       problem
         ? `<div class="notice" style="margin:14px">${icon('lock')} ${escape(problem)} Die Einstellungen bleiben erhalten. Bearbeite diesen Plan in deiner bisherigen Scheduler-Oberfläche.</div>`
         : plan.timeslots
             .map((slot) => {
               const current =
                 enabled &&
-                this.day === now.day &&
-                applies(plan, now.day) &&
+                weekDates(this.hass, this.weekOffset)[this.day] === localDate(this.hass) &&
+                match === 'yes' &&
                 minutes(slot.start) <= now.minute &&
                 endMinutes(slot.stop!) > now.minute;
               return `<div class="period ${current ? 'active-period' : ''}">${icon(Number(slot.actions[0].service_data?.temperature) >= 20 ? 'sun' : 'moon')}<div><strong>${escape(slot.start.slice(0, 5))} – ${clock(endMinutes(slot.stop!))}</strong>${current ? '<small>Jetzt im Heizplan</small>' : ''}</div><div class="period-temp">${escape(temperatureText(slot, this.unit()))}</div></div>`;
@@ -439,10 +491,17 @@ class HeatingPlanCard extends HTMLElement {
       this.day = index;
       this.render();
     } else if (action === 'today') {
+      this.weekOffset = 0;
+      void this.refreshCalendar();
       this.day = currentClock(this.hass).day;
+      this.render();
+    } else if (action === 'previous-week' || action === 'next-week') {
+      this.weekOffset += action === 'next-week' ? 1 : -1;
+      void this.refreshCalendar();
       this.render();
     } else if (action === 'refresh') {
       await this.refresh();
+      await this.refreshCalendar(true);
     } else if (action === 'dismiss') {
       this.message = '';
       this.render();
@@ -522,6 +581,7 @@ class HeatingPlanCard extends HTMLElement {
       this.render();
       try {
         this.schedules = await this.api.save(session.draft, session.original);
+        void this.refreshCalendar();
         const saved = this.schedules.find((s) => s.schedule_id === session.original?.schedule_id);
         this.undo =
           session.original && saved
@@ -566,6 +626,7 @@ class HeatingPlanCard extends HTMLElement {
       this.render();
       try {
         this.schedules = await this.api.save(toDraft(this.undo.before), this.undo.after);
+        void this.refreshCalendar();
         this.message = 'Die letzte Änderung wurde rückgängig gemacht.';
         this.undo = undefined;
       } catch (error) {

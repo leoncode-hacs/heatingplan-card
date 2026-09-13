@@ -112,8 +112,17 @@ combinations remain **visible but read-only** in this editor. Their configuratio
 is never silently simplified. Edit those rules in your existing Scheduler UI.
 Their activation switches still control the underlying schedules.
 
-Working-day calendar plans are listed separately because a fixed seven-column
-week cannot accurately predict holidays from the current Workday sensor alone.
+All plans share one dated week view, including paused plans. Navigate between
+weeks to preview their assignment; editing still changes the recurring plan.
+Calendar plans use Scheduler's `binary_sensor.workday_sensor`: today's sensor
+state is authoritative; other dates are queried with the read-only
+`workday.check_date` response action, including its holiday configuration.
+If no canonical sensor exists, the view follows Scheduler's Monday–Friday
+fallback and labels it **Standardwoche**. Failed or unavailable date queries
+leave possible plans visible as **Zuordnung noch offen**. Calendar results are
+cached for five minutes and refreshed when the week or sensor changes.
+Paused plans remain gray and explicitly labeled **Pausiert**; only days without
+any matching or potentially matching plan show an empty state.
 Temperature changes outside this card, window detection and other automations
 can also affect the actual target. The displayed plan is not a guarantee that
 no other controller will change the thermostat.

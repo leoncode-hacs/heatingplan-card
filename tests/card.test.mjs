@@ -445,3 +445,115 @@ test('off is not offered when the thermostat does not advertise it', async () =>
     await m.close();
   }
 });
+
+test('paused calendar plan appears in the common week and selected day without an empty state', async () => {
+  const { schedule } = fixture();
+  schedule.weekdays = ['workday'];
+  schedule.enabled = false;
+  const b = backend([schedule]);
+  b.hass.states['switch.plan'].state = 'off';
+  const m = await mount(b);
+  try {
+    m.root.querySelector('[data-action="day"][data-index="0"]').click();
+    assert.equal(m.root.querySelectorAll('article.plan.paused').length, 1);
+    assert.equal(m.root.querySelectorAll('.week-plan.paused').length, 5);
+    assert.equal(m.root.querySelector('.empty-state'), null);
+    assert.match(m.root.querySelector('article.plan').textContent, /Standardwoche/);
+    assert.doesNotMatch(m.root.textContent, /Pläne nach Arbeitskalender|Kein Tagesplan/);
+    assert.equal(b.writes.length, 0);
+  } finally {
+    await m.close();
+  }
+});
+
+test('calendar failure leaves candidate plans visible and caches queries across hass updates', async () => {
+  const { schedule } = fixture();
+  schedule.weekdays = ['workday'];
+  const b = backend([schedule]);
+  b.hass.states['binary_sensor.workday_sensor'] = { state: 'unavailable', attributes: {} };
+  const original = b.hass.callWS;
+  let queries = 0;
+  b.hass.callWS = async (message) => {
+    if (message.type !== 'call_service') return original(message);
+    queries++;
+    throw new Error('Calendar unavailable');
+  };
+  const m = await mount(b);
+  try {
+    assert.equal(m.root.querySelectorAll('.week-plan.uncertain').length, 7);
+    assert.match(m.root.querySelector('article.plan').textContent, /Zuordnung noch offen/);
+    assert.equal(m.root.querySelector('.empty-state'), null);
+    const count = queries;
+    m.card.hass = { ...b.hass };
+    await settle();
+    assert.equal(queries, count);
+    assert.equal(b.writes.length, 0);
+  } finally {
+    await m.close();
+  }
+});
+
+test('holiday responses select free-day plan inline and week navigation never writes schedules', async () => {
+  const { schedule } = fixture();
+  const b = backend([
+    { ...schedule, name: 'Arbeit', weekdays: ['workday'] },
+    {
+      ...clone(schedule),
+      schedule_id: 'free',
+      entity_id: 'switch.free',
+      name: 'Frei',
+      weekdays: ['weekend'],
+    },
+  ]);
+  b.hass.states['binary_sensor.workday_sensor'] = { state: 'off', attributes: {} };
+  const original = b.hass.callWS;
+  b.hass.callWS = async (message) =>
+    message.type === 'call_service'
+      ? { response: { 'binary_sensor.workday_sensor': { workday: false } } }
+      : original(message);
+  const m = await mount(b);
+  try {
+    m.root.querySelector('[data-action="day"][data-index="0"]').click();
+    assert.equal(m.root.querySelector('article.plan h3').textContent, 'Frei');
+    assert.equal(m.root.querySelectorAll('article.plan').length, 1);
+    const originalWeek = m.root.querySelector('.week-head .eyebrow').textContent;
+    button(m.root, 'next-week').click();
+    await settle();
+    assert.notEqual(m.root.querySelector('.week-head .eyebrow').textContent, originalWeek);
+    assert.equal(m.root.querySelector('article.plan h3').textContent, 'Frei');
+    button(m.root, 'today').click();
+    await settle();
+    assert.equal(m.root.querySelector('.week-head .eyebrow').textContent, originalWeek);
+    assert.equal(b.writes.length, 0);
+  } finally {
+    await m.close();
+  }
+});
+
+test('late response from a previous week cannot overwrite the currently displayed calendar', async () => {
+  const { schedule } = fixture();
+  const b = backend([{ ...schedule, weekdays: ['workday'] }]);
+  b.hass.states['binary_sensor.workday_sensor'] = { state: 'unavailable', attributes: {} };
+  const original = b.hass.callWS,
+    pending = [];
+  b.hass.callWS = (message) =>
+    message.type === 'call_service' ? new Promise((resolve) => pending.push(resolve)) : original(message);
+  const m = await mount(b);
+  try {
+    assert.equal(pending.length, 7);
+    button(m.root, 'next-week').click();
+    assert.equal(pending.length, 14);
+    for (const resolve of pending.slice(7))
+      resolve({ response: { 'binary_sensor.workday_sensor': { workday: false } } });
+    await settle();
+    assert.ok(m.root.querySelector('.empty-state'));
+    for (const resolve of pending.slice(0, 7))
+      resolve({ response: { 'binary_sensor.workday_sensor': { workday: true } } });
+    await settle();
+    assert.ok(m.root.querySelector('.empty-state'));
+    assert.equal(m.root.querySelectorAll('.week-plan').length, 0);
+  } finally {
+    for (const resolve of pending) resolve({});
+    await m.close();
+  }
+});
