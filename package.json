@@ -1,0 +1,28 @@
+{
+  "name": "heatingplan-card",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A responsive heating plan manager for Home Assistant and the Scheduler integration.",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/leoncode-hacs/heatingplan-card.git"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "check": "npm run typecheck && npm run build && npm test",
+    "dev": "npm run build && node scripts/serve.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "happy-dom": "20.14.5",
+    "prettier": "3.9.6",
+    "typescript": "7.0.2"
+  },
+  "type": "module"
+}

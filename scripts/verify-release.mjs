@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+const pkg = JSON.parse(await readFile('package.json'));
+const lock = JSON.parse(await readFile('package-lock.json'));
+const tag = process.argv[2];
+assert.match(tag, /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);
+assert.equal(tag, `v${pkg.version}`);
+assert.equal(pkg.version, lock.version);
+assert.equal(pkg.version, lock.packages[''].version);
+assert.equal(pkg.license, 'GPL-3.0-only');
+assert.match(await readFile('LICENSE', 'utf8'), /Version 3, 29 June 2007/);

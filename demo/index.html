@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="de">
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>
+    Heating Plan Card · Vorschau</title
+  ><style>
+    body {
+      margin: 0;
+      background: #eaf0eb;
+      color: #203a36;
+      font-family: system-ui, sans-serif;
+    }
+    header.demo {
+      max-width: 1240px;
+      margin: 28px auto 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 20px;
+      font-size: 12px;
+      color: #65776f;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #2c5548;
+    }
+    .brand svg {
+      width: 24px;
+      height: 24px;
+    }
+    .demo-controls {
+      display: flex;
+      gap: 8px;
+    }
+    .demo-controls button {
+      background: #fff8;
+      border: 1px solid #ccd9d0;
+      padding: 9px 13px;
+      border-radius: 8px;
+      color: inherit;
+      cursor: pointer;
+    }
+    .wrapper {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 0 20px 40px;
+    }
+    .wrapper.mobile {
+      max-width: 390px;
+    }
+    heatingplan-card {
+      --primary-text-color: #203a36;
+      --secondary-text-color: #667b74;
+      --ha-card-background: #fdfefd;
+      --divider-color: #e0e8e2;
+    }
+    body.dark {
+      background: #131e1b;
+    }
+    body.dark .brand { color: #bdd9cc; }
+      body.dark .demo-controls button { color: #dce9e1; background: #263d33; }
+      body.dark heatingplan-card {
+      --primary-text-color: #e4ece7;
+      --secondary-text-color: #a0b5a9;
+      --ha-card-background: #1c2b25;
+      --divider-color: #35463d;
+    }
+    footer.demo {
+      max-width: 1240px;
+      margin: 0 auto 24px;
+      text-align: center;
+      font-size: 11px;
+      color: #64786d;
+    }
+    @media (max-width: 600px) {
+      header.demo {
+        margin: 14px auto;
+        gap: 10px;
+      }
+      .wrapper {
+        padding: 0 8px 20px;
+      }
+      .demo-controls button {
+        padding: 8px;
+      }
+      .demo-controls .wide {
+        display: none;
+      }
+    }
+  </style>
+  <header class="demo">
+    <span class="brand"
+      ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="m3 11 9-8 9 8M6 10v11h12V10M10 21v-7h4v7" /></svg
+      >Heating Plan Card</span
+    >
+    <div class="demo-controls">
+      <button id="desktop" class="wide">Desktop</button><button id="mobile" class="wide">Handy</button
+      ><button id="theme">Hell / Dunkel</button>
+    </div>
+  </header>
+  <div class="wrapper" id="wrapper"><heatingplan-card></heatingplan-card></div>
+  <footer class="demo">
+    Interaktive Vorschau mit Beispieldaten. Änderungen steuern keine echte Heizung.
+  </footer>
+  <script src="/dist/heatingplan-card.js"></script>
+  <script type="module" src="/demo/demo.js"></script>
+</html>

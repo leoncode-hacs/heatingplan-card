@@ -1,0 +1,41 @@
+name: Release
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to publish
+        required: true
+        type: string
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Verify version and license
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: node scripts/verify-release.mjs "$RELEASE_TAG"
+      - run: npm run check
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum heatingplan-card.js > SHA256SUMS
+      - name: Publish HACS assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: >-
+          gh release create "$RELEASE_TAG"
+          dist/heatingplan-card.js dist/SHA256SUMS
+          --verify-tag --title "Heating Plan Card $RELEASE_TAG"
+          --notes-file RELEASE_NOTES.md
