@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright 2026 Heating Plan Card contributors
-import type { Draft, Hass, Period, Room, Schedule } from './types.ts';
+import type { Draft, Hass, Period, Room, Schedule, ScheduleSlot } from './types.ts';
 export const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 export const DAY_NAMES = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
 export const SHORT_DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
@@ -75,6 +75,19 @@ export function limits(hass: Hass, entity: string) {
     step: Number.isFinite(a.target_temp_step) && a.target_temp_step > 0 ? a.target_temp_step : 0.5,
   };
 }
+export function supportsMode(hass: Hass, entity: string, mode: 'heat' | 'off'): boolean {
+  return hass.states[entity]?.attributes.hvac_modes?.includes(mode) === true;
+}
+export function slotIsOff(slot: ScheduleSlot): boolean {
+  const action = slot.actions[0];
+  return (
+    action?.service === 'climate.turn_off' ||
+    (action?.service === 'climate.set_hvac_mode' && action.service_data?.hvac_mode === 'off')
+  );
+}
+export function temperatureText(slot: ScheduleSlot, unit: string): string {
+  return slotIsOff(slot) ? 'Aus' : `${temperature(slot.actions[0]?.service_data?.temperature)} ${unit}`;
+}
 // Only complete, plain temperature schedules are writable by the simple editor.
 // Other schedules remain visible and retain their full backend configuration.
 export function editProblem(schedule: Schedule): string | null {
@@ -96,12 +109,19 @@ export function editProblem(schedule: Schedule): string | null {
     const action = slot.actions[0];
     if (slot.conditions?.length || slot.track_conditions)
       return 'Dieser Plan enthält zusätzliche Bedingungen.';
-    if (
-      slot.actions.length !== 1 ||
-      action?.service !== 'climate.set_temperature' ||
-      !Number.isFinite(action.service_data?.temperature) ||
-      Object.keys(action.service_data || {}).some((key) => key !== 'temperature')
-    )
+    const data = action?.service_data || {};
+    const plainOff =
+      (action?.service === 'climate.turn_off' && Object.keys(data).length === 0) ||
+      (action?.service === 'climate.set_hvac_mode' &&
+        data.hvac_mode === 'off' &&
+        Object.keys(data).length === 1);
+    const plainHeat =
+      action?.service === 'climate.set_temperature' &&
+      Number.isFinite(data.temperature) &&
+      Object.keys(data).every(
+        (key) => key === 'temperature' || (key === 'hvac_mode' && data.hvac_mode === 'heat'),
+      );
+    if (slot.actions.length !== 1 || (!plainOff && !plainHeat))
       return 'Dieser Plan enthält zusätzliche Einstellungen oder Aktionen.';
     const start = minutes(slot.start),
       stop = slot.stop ? endMinutes(slot.stop) : NaN;
@@ -119,7 +139,12 @@ export function toDraft(schedule: Schedule): Draft {
     weekdays: schedule.weekdays.includes('daily') ? [...DAYS] : [...schedule.weekdays],
     periods: schedule.timeslots.map((slot) => ({
       start: minutes(slot.start),
-      temperature: Number(slot.actions[0].service_data?.temperature),
+      temperature: slotIsOff(slot) ? 20 : Number(slot.actions[0].service_data?.temperature),
+      ...(slotIsOff(slot)
+        ? { mode: 'off' as const }
+        : slot.actions[0].service_data?.hvac_mode === 'heat'
+          ? { mode: 'heat' as const }
+          : {}),
     })),
   };
 }
@@ -157,6 +182,15 @@ export function validateDraft(draft: Draft, hass: Hass): string | null {
   if (!draft.periods.length || draft.periods[0].start !== 0 || draft.periods.length > 24)
     return 'Der Tag muss um 00:00 beginnen und darf höchstens 24 Abschnitte enthalten.';
   const range = limits(hass, draft.entity);
+  const hasOff = draft.periods.some((p) => p.mode === 'off');
+  if (hasOff && !supportsMode(hass, draft.entity, 'off'))
+    return 'Dieses Thermostat unterstützt den Aus-Modus nicht.';
+  if (
+    (draft.periods.some((p) => p.mode === 'heat') ||
+      (hasOff && draft.periods.some((p) => p.mode !== 'off'))) &&
+    !supportsMode(hass, draft.entity, 'heat')
+  )
+    return 'Dieses Thermostat kann nicht automatisch in den Heizmodus zurückkehren.';
   for (let i = 0; i < draft.periods.length; i++) {
     const p = draft.periods[i];
     if (
@@ -166,6 +200,8 @@ export function validateDraft(draft: Draft, hass: Hass): string | null {
       (i > 0 && p.start <= draft.periods[i - 1].start)
     )
       return 'Die Uhrzeiten müssen in aufsteigender Reihenfolge liegen und dürfen sich nicht wiederholen.';
+    if (p.mode && p.mode !== 'heat' && p.mode !== 'off') return 'Bitte wähle Heizen oder Aus.';
+    if (p.mode === 'off') continue;
     if (!Number.isFinite(p.temperature) || p.temperature < range.min || p.temperature > range.max)
       return `Bitte wähle Temperaturen zwischen ${temperature(range.min)} und ${temperature(range.max)} °C.`;
     if (Math.abs(p.temperature / range.step - Math.round(p.temperature / range.step)) > 0.00001)
@@ -183,11 +219,22 @@ export function payload(draft: Draft, original?: Schedule): Record<string, unkno
       start: `${clock(p.start)}:00`,
       stop: draft.periods[i + 1] ? `${clock(draft.periods[i + 1].start)}:00` : '00:00:00',
       actions: [
-        {
-          entity_id: draft.entity,
-          service: 'climate.set_temperature',
-          service_data: { temperature: p.temperature },
-        },
+        p.mode === 'off'
+          ? {
+              entity_id: draft.entity,
+              service: 'climate.set_hvac_mode',
+              service_data: { hvac_mode: 'off' },
+            }
+          : {
+              entity_id: draft.entity,
+              service: 'climate.set_temperature',
+              service_data: {
+                temperature: p.temperature,
+                ...(p.mode === 'heat' || draft.periods.some((period) => period.mode === 'off')
+                  ? { hvac_mode: 'heat' }
+                  : {}),
+              },
+            },
       ],
     })),
     ...(original ? { schedule_id: original.schedule_id } : {}),
@@ -241,9 +288,9 @@ export function nextChange(
   schedules: Schedule[],
   hass: Hass,
   entity: string,
-): { minutes: number; temperature: number } | undefined {
+): { minutes: number; temperature: number; off: boolean } | undefined {
   const now = currentClock(hass);
-  let next: { minutes: number; temperature: number } | undefined;
+  let next: { minutes: number; temperature: number; off: boolean } | undefined;
   for (let offset = 0; offset <= 7; offset++)
     for (const s of schedules) {
       if (
@@ -256,7 +303,11 @@ export function nextChange(
       for (const slot of s.timeslots) {
         const distance = offset * 1440 + minutes(slot.start) - now.minute;
         if (distance > 0 && (!next || distance < next.minutes))
-          next = { minutes: distance, temperature: Number(slot.actions[0].service_data?.temperature) };
+          next = {
+            minutes: distance,
+            temperature: Number(slot.actions[0].service_data?.temperature),
+            off: slotIsOff(slot),
+          };
       }
     }
   return next;
@@ -276,6 +327,7 @@ export function insertPeriod(periods: Period[]): Period[] {
   copy.splice(index + 1, 0, {
     start: Math.floor((periods[index].start + gap / 2) / 15) * 15,
     temperature: periods[index].temperature,
+    ...(periods[index].mode ? { mode: periods[index].mode } : {}),
   });
   return copy;
 }

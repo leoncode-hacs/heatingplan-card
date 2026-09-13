@@ -63,7 +63,22 @@ export class SchedulerApi {
     )
       throw new Error('Die Scheduler-Integration hat den Heizplan nicht gespeichert.');
     const signature = (d: Draft) =>
-      JSON.stringify([d.name.trim(), d.entity, [...d.weekdays].sort(), d.periods]);
+      JSON.stringify([
+        d.name.trim(),
+        d.entity,
+        [...d.weekdays].sort(),
+        d.periods.map((p) =>
+          p.mode === 'off' ? [p.start, 'off'] : [p.start, p.mode || 'temperature', p.temperature],
+        ),
+      ]);
+    const expectedDraft: Draft = {
+      ...draft,
+      periods: draft.periods.map((p) =>
+        p.mode !== 'off' && draft.periods.some((period) => period.mode === 'off')
+          ? { ...p, mode: 'heat' }
+          : p,
+      ),
+    };
     for (const delay of [0, 100, 250, 500, 1000]) {
       if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
       const result = await this.list();
@@ -73,7 +88,7 @@ export class SchedulerApi {
             ? s.schedule_id === original.schedule_id
             : !fresh.some((previous) => previous.schedule_id === s.schedule_id)) &&
           !editProblem(s) &&
-          signature(toDraft(s)) === signature(draft),
+          signature(toDraft(s)) === signature(expectedDraft),
       );
       if (found) return result;
     }

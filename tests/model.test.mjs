@@ -50,8 +50,8 @@ test('invalid time values and second precision are rejected', () => {
 for (const [label, mutate] of [
   ['conditions', (s) => (s.timeslots[0].conditions = [{ entity_id: 'binary_sensor.window', value: 'off' }])],
   ['tracking', (s) => (s.timeslots[0].track_conditions = true)],
-  ['different services', (s) => (s.timeslots[0].actions[0].service = 'climate.turn_off')],
-  ['extra hvac mode', (s) => (s.timeslots[0].actions[0].service_data.hvac_mode = 'heat')],
+  ['different services', (s) => (s.timeslots[0].actions[0].service = 'climate.set_fan_mode')],
+  ['extra hvac mode', (s) => (s.timeslots[0].actions[0].service_data.hvac_mode = 'cool')],
   ['multiple actions', (s) => s.timeslots[0].actions.push(clone(s.timeslots[0].actions[0]))],
   ['multiple entities', (s) => (s.timeslots[1].actions[0].entity_id = 'climate.other')],
   ['date period', (s) => (s.end_date = '2027-01-01')],
@@ -135,4 +135,45 @@ test('Fahrenheit defaults are converted and respect device bounds', () => {
   const draft = newDraft(entity, hass);
   assert.equal(draft.periods[1].temperature, 70);
   assert.equal(validateDraft(draft, hass), null);
+});
+
+test('off periods round trip without a temperature and resume heating explicitly', () => {
+  const { hass, entity } = fixture();
+  const draft = newDraft(entity, hass);
+  draft.periods[0].mode = 'off';
+  assert.equal(validateDraft(draft, hass), null);
+  const data = payload(draft);
+  assert.deepEqual(data.timeslots[0].actions[0], {
+    entity_id: entity,
+    service: 'climate.set_hvac_mode',
+    service_data: { hvac_mode: 'off' },
+  });
+  assert.equal(data.timeslots[1].actions[0].service_data.hvac_mode, 'heat');
+  const schedule = { ...data, schedule_id: 'offplan', entity_id: 'switch.offplan' };
+  assert.equal(editProblem(schedule), null);
+  const restored = toDraft(schedule);
+  assert.equal(restored.periods[0].mode, 'off');
+  assert.equal(restored.periods[1].mode, 'heat');
+  assert.deepEqual(payload(restored).timeslots, data.timeslots);
+});
+
+test('off plans validate device capabilities and do not require temperatures for off slots', () => {
+  const { hass, entity } = fixture();
+  const draft = newDraft(entity, hass);
+  draft.periods = [{ start: 0, mode: 'off', temperature: NaN }];
+  assert.equal(validateDraft(draft, hass), null);
+  hass.states[entity].attributes.hvac_modes = ['heat'];
+  assert.match(validateDraft(draft, hass), /Aus-Modus/);
+  hass.states[entity].attributes.hvac_modes = ['off'];
+  draft.periods.push({ start: 600, temperature: 21 });
+  assert.match(validateDraft(draft, hass), /zurückkehren/);
+});
+
+test('plain existing turn_off is editable but additional off service data is protected', () => {
+  const { schedule } = fixture();
+  schedule.timeslots[0].actions = [{ service: 'climate.turn_off', entity_id: 'climate.test' }];
+  assert.equal(editProblem(schedule), null);
+  assert.equal(toDraft(schedule).periods[0].mode, 'off');
+  schedule.timeslots[0].actions[0].service_data = { unknown_option: true };
+  assert.ok(editProblem(schedule));
 });

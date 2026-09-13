@@ -3,6 +3,10 @@
 export const styles = `
 :host {
   display: block;
+  --hp-safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --hp-safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+  --hp-safe-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
+  --hp-safe-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
   --hp-bg: var(--ha-card-background, var(--card-background-color, #f8faf9));
   --hp-fg: var(--primary-text-color, #203a36);
   --hp-muted: var(--secondary-text-color, #667b74);
@@ -532,6 +536,7 @@ small,
   overflow: hidden;
 }
 .dialog-head {
+  flex: 0 0 auto;
   padding: 22px 24px;
   display: flex;
   justify-content: space-between;
@@ -540,11 +545,16 @@ small,
   gap: 16px;
 }
 .dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
   padding: 24px;
   overflow: auto;
   overscroll-behavior: contain;
 }
 .dialog-footer {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
   border-top: 1px solid var(--hp-line);
   padding: 16px 24px;
   display: flex;
@@ -553,6 +563,8 @@ small,
   background: var(--hp-bg);
 }
 .dialog-footer .actions {
+  flex-wrap: wrap;
+  min-width: 0;
   margin-left: auto;
 }
 .field {
@@ -654,6 +666,7 @@ select {
   gap: 5px;
 }
 .stepper input {
+  flex: 1 1 70px;
   width: 90px;
   text-align: center;
   appearance: textfield;
@@ -664,6 +677,7 @@ select {
   appearance: none;
 }
 .stepper button {
+  flex: 0 0 44px;
   width: 44px;
   height: 46px;
   padding: 0;
@@ -840,31 +854,29 @@ select {
     border: 0;
   }
   .dialog-head {
-    padding: 16px;
+    padding: calc(16px + var(--hp-safe-top)) max(16px, var(--hp-safe-right)) 16px max(16px, var(--hp-safe-left));
   }
   .dialog-body {
-    padding: 18px 16px;
+    padding: 18px max(16px, var(--hp-safe-right)) 18px max(16px, var(--hp-safe-left));
   }
   .dialog-footer {
-    padding: 12px 16px max(12px, env(safe-area-inset-bottom));
+    padding: 12px max(16px, var(--hp-safe-right)) calc(12px + var(--hp-safe-bottom)) max(16px, var(--hp-safe-left));
   }
   .two-fields {
     grid-template-columns: 1fr;
     gap: 0;
   }
   .edit-period {
-    grid-template-columns: minmax(94px, 1fr) minmax(160px, 1.4fr) 36px;
-    gap: 6px;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    gap: 12px;
+    padding: 16px 0;
   }
-  .stepper input {
-    width: 65px;
-  }
-  .stepper button {
-    width: 42px;
-  }
-  .delete {
-    width: 36px;
-  }
+  .edit-period > .period-time { grid-column: 1; grid-row: 1; }
+  .edit-period > .period-settings { grid-column: 1 / -1; grid-row: 2; }
+  .edit-period > .delete { grid-column: 2; grid-row: 1; width: 44px; }
+  .stepper { max-width: 260px; width: 100%; }
+  .stepper input { width: 90px; }
+  .stepper button { width: 44px; }
   .dialog-footer .btn {
     padding: 10px 14px;
   }
@@ -872,27 +884,24 @@ select {
     gap: 4px;
   }
 }
-@media (max-width: 360px) {
-  .edit-period {
-    grid-template-columns: minmax(0, 1fr) 44px;
-  }
-  .edit-period > label {
-    grid-column: 1;
-  }
-  .edit-period > div {
-    grid-column: 1;
-    grid-row: 2;
-  }
-  .edit-period > .delete {
-    grid-column: 2;
-    grid-row: 1 / 3;
-    width: 44px;
-  }
-  .stepper {
-    max-width: 220px;
-  }
-  .stepper input {
-    flex: 1;
-  }
+.dialog-head > div { min-width: 0; }
+.dialog-head > button { flex: 0 0 auto; }
+.edit-period > * { min-width: 0; }
+.edit-period input[type="time"] { min-width: 0; max-width: 100%; -webkit-appearance: none; appearance: none; }
+.edit-period input[type="time"]::-webkit-date-and-time-value { text-align: left; }
+.period-settings { display: grid; gap: 10px; min-width: 0; }
+.period-mode { display: block; font-size: 11px; color: var(--hp-muted); }
+.period-mode select { display: block; width: 100%; margin-top: 4px; min-width: 0; }
+.off-period { padding: 14px 0; font-weight: 600; }
+.mode-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 20px; }
+.quick-dialog { max-width: 420px; height: auto; }
+.quick-stepper { justify-content: center; max-width: 270px; margin: 0 auto; }
+.quick-stepper input { font-size: 30px; min-height: 64px; }
+@media (max-width: 600px) {
+  .quick-dialog { height: auto; align-self: flex-end; border-radius: 20px 20px 0 0; }
+  .quick-dialog .dialog-head { padding-top: 20px; }
+  .quick-dialog { max-height: calc(100dvh - var(--hp-safe-top)); }
+  .dialog-footer > .actions { flex: 1; justify-content: flex-end; }
+  .dialog-footer .btn { min-width: 0; white-space: normal; text-align: center; }
 }
 `;

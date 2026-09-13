@@ -58,6 +58,7 @@ export interface Schedule {
   [key: string]: unknown;
 }
 export interface Period {
+  mode?: 'heat' | 'off';
   start: number;
   temperature: number;
 }

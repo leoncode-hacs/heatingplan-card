@@ -375,3 +375,73 @@ test('card restores preview and document scrolling across shadow-root boundaries
     await m.close();
   }
 });
+
+test('direct heating off sends a real mode command and leaves schedules unchanged', async () => {
+  const b = backend();
+  const m = await mount(b);
+  try {
+    button(m.root, 'quick').click();
+    m.root.querySelector('[data-mode="off"]').click();
+    assert.equal(m.root.querySelector('[aria-label="Zieltemperatur"]'), null);
+    button(m.root, 'quick-save').click();
+    await settle();
+    assert.deepEqual(JSON.parse(JSON.stringify(b.writes)), [
+      {
+        domain: 'climate',
+        service: 'set_hvac_mode',
+        payload: { entity_id: 'climate.test', hvac_mode: 'off' },
+      },
+    ]);
+    assert.match(m.root.textContent, /Ausschaltbefehl/);
+  } finally {
+    await m.close();
+  }
+});
+
+test('direct heating resumes an off thermostat with an explicit heat mode', async () => {
+  const b = backend();
+  b.hass.states['climate.test'].state = 'off';
+  const m = await mount(b);
+  try {
+    button(m.root, 'quick').click();
+    m.root.querySelector('[data-mode="heat"]').click();
+    button(m.root, 'quick-save').click();
+    await settle();
+    assert.equal(b.writes[0].service, 'set_temperature');
+    assert.equal(b.writes[0].payload.hvac_mode, 'heat');
+    assert.equal(b.hass.states['climate.test'].state, 'heat');
+  } finally {
+    await m.close();
+  }
+});
+
+test('off selection in the plan editor hides temperature and saves a mode action', async () => {
+  const b = backend();
+  const m = await mount(b);
+  try {
+    button(m.root, 'new').click();
+    fill(m.w, m.root.querySelector('[data-period-mode="0"]'), 'off');
+    assert.equal(m.root.querySelector('[data-temperature="0"]'), null);
+    button(m.root, 'save').click();
+    await settle();
+    assert.equal(b.schedules[0].timeslots[0].actions[0].service_data.hvac_mode, 'off');
+    assert.equal(b.schedules[0].timeslots[1].actions[0].service_data.hvac_mode, 'heat');
+    assert.match(m.root.querySelector('.plan-body').textContent, /Aus/);
+    assert.doesNotMatch(m.root.querySelector('.plan-body').textContent, /NaN/);
+  } finally {
+    await m.close();
+  }
+});
+
+test('off is not offered when the thermostat does not advertise it', async () => {
+  const b = backend();
+  b.hass.states['climate.test'].attributes.hvac_modes = ['heat'];
+  const m = await mount(b);
+  try {
+    button(m.root, 'quick').click();
+    assert.equal(m.root.querySelector('[data-mode="off"]').disabled, true);
+    assert.equal(b.writes.length, 0);
+  } finally {
+    await m.close();
+  }
+});

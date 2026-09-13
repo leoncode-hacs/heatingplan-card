@@ -96,3 +96,31 @@ test('enabling an advanced plan still checks conflicts', async () => {
   await assert.rejects(() => new SchedulerApi(() => b.hass).toggle(complex, true), /bereits aktiv/);
   assert.equal(b.writes.length, 0);
 });
+
+test('saving mixed off/heating periods verifies readback after the backend adds defaults', async () => {
+  const b = backend();
+  const draft = newDraft('climate.test', b.hass);
+  draft.periods[0].mode = 'off';
+  const result = await new SchedulerApi(() => b.hass).save(draft);
+  assert.equal(b.writes.length, 1);
+  assert.equal(result[0].timeslots[0].actions[0].service_data.hvac_mode, 'off');
+  assert.equal(result[0].timeslots[1].actions[0].service_data.hvac_mode, 'heat');
+});
+
+test('readback must retain explicit heat mode after an off period', async () => {
+  const b = backend();
+  const draft = newDraft('climate.test', b.hass);
+  draft.periods[0].mode = 'off';
+  const read = b.hass.callWS;
+  b.hass.callWS = async (message) => {
+    const result = await read(message);
+    if (b.writes.length && Array.isArray(result))
+      for (const s of result)
+        for (const slot of s.timeslots)
+          if (slot.actions[0].service_data.hvac_mode === 'heat')
+            delete slot.actions[0].service_data.hvac_mode;
+    return result;
+  };
+  await assert.rejects(() => new SchedulerApi(() => b.hass).save(draft), /noch nicht bestätigt/);
+  assert.equal(b.writes.length, 1);
+});

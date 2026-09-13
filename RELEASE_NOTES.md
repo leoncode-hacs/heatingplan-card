@@ -1,10 +1,16 @@
-## Heating Plan Card 1.0.1
+## Heating Plan Card 1.1.0
 
-- Die Thermostatauswahl im Konfigurationseditor springt bei Home-Assistant-Statusupdates nicht mehr nach oben.
-- Scrollposition und Eingabefokus bleiben auch beim Auswählen von Thermostaten erhalten. Unfertige Titel werden durch Statusupdates nicht überschrieben.
-- Umbenannte Räume erscheinen weiterhin aktuell; die Liste wird nur bei tatsächlichen Änderungen neu aufgebaut.
-- Die Texte „Zuhause wohlfühlen“ und „Deine Räume. Deine Zeiten.“ wurden aus dem Kartenkopf entfernt.
+### Handy-Bedienung
 
-Nach dem HACS-Update das Frontend vollständig neu laden und den Karteneditor einmal neu öffnen. Die Scheduler-Integration und vorhandene Heizpläne bleiben unverändert.
+- iPhone-Statusleiste und Home-Indikator werden durch sichere Bildschirmränder berücksichtigt.
+- Uhrzeit und Heizungssteuerung stehen auf schmalen Bildschirmen untereinander; native iPhone-Zeitfelder überlagern die Tasten nicht mehr.
+- Dialogkopf und Speichern-Leiste bleiben außerhalb des scrollbaren Inhalts, ohne zusammenzuschieben.
 
-Die Scrollkorrektur gilt auch für die Karte und ihre Vorschau: unveränderte Inhalte werden nicht mehr ersetzt; bei tatsächlichen Änderungen bleiben die Scrollpositionen der umgebenden Home-Assistant-Ansicht erhalten.
+### Heizung ausschalten
+
+- Unter **Heizung steuern** zwischen **Heizen** und **Heizung aus** wählen und bestätigen.
+- Jeder Heizplan-Abschnitt kann ebenfalls auf **Heizung aus** gestellt werden.
+- In Plänen mit Aus-Abschnitten aktivieren spätere Temperaturabschnitte ausdrücklich den Heizmodus.
+- Unterstützte Modi werden anhand des Thermostats geprüft. Vorhandene Sonderregeln bleiben geschützt.
+
+Nach dem HACS-Update das Frontend vollständig neu laden und geöffnete Dialoge neu öffnen. Direktes Ausschalten pausiert den Heizplan nicht; eine spätere Schaltung kann die Heizung wieder einschalten.

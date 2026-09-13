@@ -50,3 +50,12 @@ unchanged card snapshots and preview scrollers across shadow roots (49 tests tot
 object and a changing temperature every 300 ms. Browser checks confirmed that
 both panels remain scrolled across repeated updates and checkbox configuration
 changes. The two promotional header lines have been removed.
+
+## Version 1.1.0 — mobile safe areas and off mode
+
+Nine further tests cover real off command payloads, mixed off/heating plan
+round trips, explicit heat-mode resume, capability validation and UI mode changes
+(58 tests total). Browser layout checks at narrow phone widths use the demo's
+`?safearea=iphone` fixture (59 px top, 34 px bottom). They verify non-overlapping
+controls and header/footer insets. This simulates the geometry in Chromium;
+it is not a physical iPhone or WebKit verification.

@@ -13,6 +13,7 @@ export function fixture() {
           min_temp: 5,
           max_temp: 30,
           target_temp_step: 0.5,
+          hvac_modes: ['heat', 'off'],
         },
       },
       'switch.plan': { entity_id: 'switch.plan', state: 'on', attributes: {} },
@@ -107,7 +108,11 @@ export function backend(initial = []) {
         state: service === 'turn_on' ? 'on' : 'off',
         attributes: {},
       };
-    } else hass.states[payload.entity_id].attributes.temperature = payload.temperature;
+    } else {
+      if (payload.temperature !== undefined)
+        hass.states[payload.entity_id].attributes.temperature = payload.temperature;
+      if (payload.hvac_mode) hass.states[payload.entity_id].state = payload.hvac_mode;
+    }
   };
   hass.connection = {
     subscribeMessage: async (cb) => {

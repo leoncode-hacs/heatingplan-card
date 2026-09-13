@@ -24,7 +24,9 @@ Components and TypeScript, with no runtime library dependencies.
   automatically after an uncertain network result.
 - Respect thermostat limits and temperature step sizes, Home Assistant timezone,
   and light/dark theme colors.
-- Change the current target temperature separately from editing the schedule.
+- Change the current target temperature or turn heating off directly.
+- Choose **Heizen** or **Heizung aus** per time period; heating resumes explicitly after an off period.
+- iPhone safe-area spacing and stacked mobile time/temperature controls.
 - Visual card configuration to choose the thermostats you want to display.
 
 The first version's interface is in **German**. The product name in Home
@@ -82,14 +84,29 @@ Uninstalling the card does not delete your Scheduler schedules. To return to
 another interface, remove this card and its resource; the Scheduler integration
 continues running. Do not uninstall the Scheduler integration to change cards.
 
+## Turning heating off
+
+Open **Heizung steuern**, select **Heizung aus**, then **Heizung ausschalten**.
+This sends `climate.set_hvac_mode` with `off`; it does not just lower the target
+temperature. Existing schedules remain enabled and may change the mode again.
+To turn it back on, choose **Heizen** and confirm a temperature.
+
+In a heating plan, each period has an **Einstellung** selector. An off period
+contains only an off action. In plans containing off periods, temperature
+periods also explicitly set `hvac_mode: heat` so heating resumes. These plans
+require the thermostat to advertise both `heat` and `off` in `hvac_modes`.
+Plain legacy temperature-only plans keep their previous behavior unless an off
+period or an explicit heating mode is added. The device's own frost-protection
+behavior is independent of the displayed off mode.
+
 ## Existing schedules and editing boundaries
 
-The simple editor supports one thermostat per plan, one `climate.set_temperature`
+The simple editor supports one thermostat per plan, one temperature or off
 action per time period, and contiguous full-day periods. It supports explicit
 weekdays, daily plans, and a single `workday` or `weekend` rule. The last period
 is displayed as ending at 24:00 and is sent as `00:00:00`, as required by Scheduler.
 
-Existing plans with conditions, extra actions or HVAC-mode fields, multiple
+Existing plans with conditions, extra actions or HVAC modes other than explicit `heat` / `off`, multiple
 thermostats, dates, single executions, time gaps, or unsupported calendar
 combinations remain **visible but read-only** in this editor. Their configuration
 is never silently simplified. Edit those rules in your existing Scheduler UI.

@@ -10,6 +10,7 @@ const state = (id, name, current, target, heating = false) => ({
     min_temp: 5,
     max_temp: 30,
     target_temp_step: 0.5,
+    hvac_modes: ['heat', 'off'],
     hvac_action: heating ? 'heating' : 'idle',
   },
 });
@@ -134,7 +135,14 @@ const hass = {
       const plan = plans.find((plan) => plan.entity_id === data.entity_id);
       plan.enabled = service === 'turn_on';
     }
-    if (domain === 'climate') hass.states[data.entity_id].attributes.temperature = data.temperature;
+    if (domain === 'climate') {
+      if (data.temperature !== undefined)
+        hass.states[data.entity_id].attributes.temperature = data.temperature;
+      if (data.hvac_mode) {
+        hass.states[data.entity_id].state = data.hvac_mode;
+        hass.states[data.entity_id].attributes.hvac_action = data.hvac_mode === 'off' ? 'off' : 'idle';
+      }
+    }
     sync();
   },
 };
@@ -155,3 +163,9 @@ document.querySelector('#mobile').onclick = () => document.querySelector('#wrapp
 document.querySelector('#desktop').onclick = () =>
   document.querySelector('#wrapper').classList.remove('mobile');
 document.querySelector('#theme').onclick = () => document.body.classList.toggle('dark');
+
+// Reproducible iPhone safe-area fixture for browser layout checks only.
+if (new URLSearchParams(location.search).get('safearea') === 'iphone') {
+  card.style.setProperty('--safe-area-inset-top', '59px');
+  card.style.setProperty('--safe-area-inset-bottom', '34px');
+}
