@@ -39,6 +39,7 @@ import {
   type CalendarWeek,
   type DayMatch,
 } from './calendar.ts';
+import { roomOverview, upcomingDates } from './overview.ts';
 import { SchedulerApi } from './api.ts';
 import { styles } from './styles.ts';
 declare const __VERSION__: string;
@@ -48,6 +49,7 @@ const escape = (value: unknown) =>
     (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!,
   );
 const paths: Record<string, string> = {
+  overview: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
   home: 'M3 10 12 3l9 7M5 9v12h14V9M9 21v-8h6v8',
   heat: 'M8 3c-5 6 3 6 0 12m5-12c-5 6 3 6 0 12m5-12c-5 6 3 6 0 12M4 21h16',
   clock: 'M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0',
@@ -84,6 +86,7 @@ class HeatingPlanCard extends HTMLElement {
   private room = '';
   private day = 0;
   private weekOffset = 0;
+  private overview = false;
   private calendar: CalendarWeek = {};
   private calendarKey = '';
   private calendarExpires = 0;
@@ -219,7 +222,7 @@ class HeatingPlanCard extends HTMLElement {
   }
   private async refreshCalendar(force = false) {
     if (!this.currentHass || !this.isConnected || !this.schedules.some(usesWorkday)) return;
-    const dates = weekDates(this.hass, this.weekOffset);
+    const dates = this.overview ? upcomingDates(this.hass) : weekDates(this.hass, this.weekOffset);
     const key = calendarKey(this.hass, dates);
     if (!force && key === this.calendarKey && Date.now() < this.calendarExpires) return;
     const request = ++this.calendarRequest;
@@ -256,10 +259,10 @@ class HeatingPlanCard extends HTMLElement {
     if (room) this.room = room.id;
     const title = this.config.title || 'Heizplan';
     const markup = `<style>${styles}</style><section class="app" ${this.edit || this.quick || this.deletion ? 'inert' : ''} aria-label="${escape(title)}">
-      <header class="top"><div><h1>${escape(title)}</h1></div><div class="top-tools"><button class="btn" data-action="refresh" aria-label="Heizpläne neu laden" ${this.busy ? 'disabled' : ''}>${icon('refresh')}</button><button class="btn primary" data-action="new" aria-label="Neuer Plan" ${!room || !this.loaded || this.busy || this.error ? 'disabled' : ''}>${icon('plus')}<span class="text">Neuer Plan</span></button></div></header>
+      <header class="top"><div><h1>${escape(title)}</h1></div><div class="top-tools"><button class="btn ${this.overview ? 'primary' : ''}" data-action="overview" aria-label="Gesamtübersicht" title="Gesamtübersicht" aria-pressed="${this.overview}" ${!this.loaded || !room || this.busy ? 'disabled' : ''}>${icon('overview')}</button><button class="btn" data-action="refresh" aria-label="Heizpläne neu laden" ${this.busy ? 'disabled' : ''}>${icon('refresh')}</button><button class="btn primary" data-action="new" aria-label="Neuer Plan" ${!room || !this.loaded || this.busy || this.error ? 'disabled' : ''}>${icon('plus')}<span class="text">Neuer Plan</span></button></div></header>
       ${this.error ? `<div role="alert" class="status error"><span>${escape(this.error)}</span><button class="btn small" data-action="refresh">Erneut versuchen</button></div>` : ''}
       ${this.message ? `<div role="status" class="status"><span>${icon('check')} ${escape(this.message)}</span>${this.undo ? '<button class="btn small" data-action="undo">Rückgängig</button>' : ''}<button class="btn small" aria-label="Meldung schließen" data-action="dismiss">${icon('close')}</button></div>` : ''}
-      ${!this.currentHass || (!this.loaded && !this.error) ? '<div class="loading" role="status">Heizpläne werden geladen …<div class="skeleton"></div><div class="skeleton"></div></div>' : !room ? `<div class="empty-state">${icon('home')}<h2>Noch keine Thermostate</h2><p>Wähle in der Kartenkonfiguration die Thermostate aus, die du hier steuern möchtest.</p></div>` : `<div class="layout"><nav class="rooms" aria-label="Räume"><p class="section-label">Meine Räume · ${rooms.length}</p>${rooms.map((r) => this.roomHtml(r)).join('')}</nav><main class="main"><label class="field room-select">Raum<select id="room-select" aria-label="Raum auswählen">${rooms.map((r) => `<option value="${escape(r.id)}" ${r.id === room.id ? 'selected' : ''}>${escape(r.name)}${rooms.filter((other) => other.name === r.name).length > 1 ? ` · ${escape(r.detail)}` : ''}</option>`).join('')}</select></label>${this.roomContent(room)}</main></div>`}
+      ${!this.currentHass || (!this.loaded && !this.error) ? '<div class="loading" role="status">Heizpläne werden geladen …<div class="skeleton"></div><div class="skeleton"></div></div>' : !room ? `<div class="empty-state">${icon('home')}<h2>Noch keine Thermostate</h2><p>Wähle in der Kartenkonfiguration die Thermostate aus, die du hier steuern möchtest.</p></div>` : this.overview ? this.overviewHtml() : `<div class="layout"><nav class="rooms" aria-label="Räume"><p class="section-label">Meine Räume · ${rooms.length}</p>${rooms.map((r) => this.roomHtml(r)).join('')}</nav><main class="main"><label class="field room-select">Raum<select id="room-select" aria-label="Raum auswählen">${rooms.map((r) => `<option value="${escape(r.id)}" ${r.id === room.id ? 'selected' : ''}>${escape(r.name)}${rooms.filter((other) => other.name === r.name).length > 1 ? ` · ${escape(r.detail)}` : ''}</option>`).join('')}</select></label>${this.roomContent(room)}</main></div>`}
     </section>${this.edit ? this.editorHtml(this.edit) : this.quick ? this.quickHtml() : this.deletion ? this.deleteHtml() : ''}`;
     // hass updates often concern unrelated entities. Leave an unchanged card
     // in place so the browser can retain its scroll anchors and focus.
@@ -294,6 +297,31 @@ class HeatingPlanCard extends HTMLElement {
       if (element.scrollTop !== top) element.scrollTop = top;
       if (element.scrollLeft !== left) element.scrollLeft = left;
     }
+  }
+  private overviewHtml() {
+    const now = new Date(),
+      today = localDate(this.hass, now),
+      dates = upcomingDates(this.hass, now);
+    const rows = roomOverview(this.rooms(), this.schedules, this.hass, this.calendar, now);
+    const labels = {
+      none: 'Kein Heizplan',
+      paused: 'Alle Pläne pausiert',
+      unknown: 'Nächste Schaltung noch unklar',
+      conflict: 'Mehrere aktive Pläne · bitte prüfen',
+      later: 'Keine Schaltung in den nächsten 7 Tagen',
+      next: '',
+    };
+    return `<main class="overview" aria-label="Gesamtübersicht aller Räume"><div class="between overview-head"><div><p class="eyebrow">Alle Räume</p><h2>Als Nächstes</h2><p class="muted">Die nächste geplante Schaltung pro Raum, nach Uhrzeit sortiert.</p></div><button class="btn small" data-action="overview">Zur Raumansicht</button></div><div class="overview-list">${rows
+      .map((row) => {
+        const event = row.next;
+        const when = event
+          ? `${event.date === today ? 'Heute' : event.date === dates[1] ? 'Morgen' : shortDate(event.date)} · ${clock(event.minute)} Uhr`
+          : '';
+        return `<button class="overview-room ${row.status === 'paused' ? 'paused' : ''}" data-action="overview-room" data-id="${escape(row.room.id)}" aria-label="${escape(row.room.name)}: Heizpläne ansehen"><span class="overview-room-name"><strong>${escape(row.room.name)}</strong><small>${escape(row.room.detail)} · ${row.unavailable ? 'Nicht erreichbar' : `Jetzt ${row.room.state.state === 'off' ? 'Aus' : `${temperature(row.room.state.attributes.temperature)} ${escape(this.unit())}`}`}</small></span><span class="overview-event">${event ? `<span class="overview-time">${when}</span><strong>${row.status === 'conflict' ? 'Pläne prüfen' : escape(temperatureText(event.slot, this.unit()))}</strong>` : `<strong>${labels[row.status]}</strong>`}<small>${row.status === 'next' && event ? escape(event.plan.name || 'Heizplan') : row.status === 'unknown' ? 'Kalender, Sonderregeln oder Planstatus prüfen' : row.status === 'conflict' ? labels.conflict : ''}${row.paused && row.status !== 'paused' ? ` · ${row.paused} pausiert` : ''}</small></span>${icon('arrow')}</button>`;
+      })
+      .join(
+        '',
+      )}</div><p class="footnote">Tippe auf einen Raum, um seine Heizpläne zu öffnen. Die Vorschau berücksichtigt heute und die nächsten sieben Tage. Andere Steuerungen können die tatsächliche Einstellung ändern.</p></main>`;
   }
   private roomHtml(room: Room) {
     return `<button class="room ${room.id === this.room ? 'active' : ''}" data-action="room" data-id="${escape(room.id)}" aria-current="${room.id === this.room ? 'true' : 'false'}"><span class="room-icon">${icon(room.state.state !== 'off' && room.state.attributes.hvac_action === 'heating' ? 'heat' : 'home')}</span><span class="room-copy"><strong>${escape(room.name)}</strong><small>${room.state.state !== 'off' && room.state.attributes.hvac_action === 'heating' ? '<span class="dot"></span>Heizt gerade' : escape(room.detail)}</small></span><span class="room-temp">${temperature(room.state.attributes.current_temperature)}°</span></button>`;
@@ -484,7 +512,20 @@ class HeatingPlanCard extends HTMLElement {
     const action = target.dataset.action,
       id = target.dataset.id,
       index = Number(target.dataset.index);
-    if (action === 'room') {
+    if (action === 'overview') {
+      this.overview = !this.overview;
+      void this.refreshCalendar();
+      this.render();
+      this.root.querySelector<HTMLElement>('[data-action="overview"]')?.focus({ preventScroll: true });
+    } else if (action === 'overview-room') {
+      this.room = id!;
+      this.overview = false;
+      this.weekOffset = 0;
+      this.day = currentClock(this.hass).day;
+      void this.refreshCalendar();
+      this.render();
+      this.root.querySelector<HTMLElement>('[data-action="overview"]')?.focus({ preventScroll: true });
+    } else if (action === 'room') {
       this.room = id!;
       this.render();
     } else if (action === 'day') {

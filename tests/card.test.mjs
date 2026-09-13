@@ -557,3 +557,75 @@ test('late response from a previous week cannot overwrite the currently displaye
     await m.close();
   }
 });
+
+test('overview is reachable from toolbar and links to rooms without writing or changing selected week on return', async () => {
+  const { schedule } = fixture();
+  schedule.weekdays = ['daily'];
+  const b = backend([schedule]),
+    m = await mount(b);
+  try {
+    button(m.root, 'next-week').click();
+    const week = m.root.querySelector('.week-head .eyebrow').textContent;
+    button(m.root, 'overview').click();
+    assert.equal(button(m.root, 'overview').getAttribute('aria-pressed'), 'true');
+    assert.ok(m.root.querySelector('.overview-room'));
+    assert.equal(m.root.querySelector('.week-grid'), null);
+    button(m.root, 'overview').click();
+    assert.equal(m.root.querySelector('.week-head .eyebrow').textContent, week);
+    button(m.root, 'overview').click();
+    button(m.root, 'overview-room').click();
+    assert.ok(m.root.querySelector('.week-grid'));
+    assert.equal(button(m.root, 'overview').getAttribute('aria-pressed'), 'false');
+    assert.equal(b.writes.length, 0);
+  } finally {
+    await m.close();
+  }
+});
+
+test('overview updates when plan pauses and safely escapes labels', async () => {
+  const { schedule } = fixture();
+  schedule.weekdays = ['daily'];
+  const b = backend([schedule]);
+  b.hass.areas.bath.name = '<img src=x onerror=alert(1)>';
+  const m = await mount(b);
+  try {
+    button(m.root, 'overview').click();
+    assert.equal(m.root.querySelectorAll('img').length, 0);
+    assert.match(m.root.querySelector('.overview-room').textContent, /<img/);
+    b.hass.states['switch.plan'].state = 'off';
+    m.card.hass = { ...b.hass };
+    await settle();
+    assert.match(m.root.querySelector('.overview-room').textContent, /Alle Pläne pausiert/);
+    assert.equal(b.writes.length, 0);
+  } finally {
+    await m.close();
+  }
+});
+
+test('overview queries upcoming dates rather than a previously selected historical week', async () => {
+  const { schedule } = fixture();
+  schedule.weekdays = ['workday'];
+  const b = backend([schedule]);
+  b.hass.states['binary_sensor.workday_sensor'] = { state: 'on', attributes: {} };
+  const original = b.hass.callWS,
+    dates = [];
+  b.hass.callWS = async (msg) => {
+    if (msg.type !== 'call_service') return original(msg);
+    dates.push(msg.service_data.check_date);
+    return { response: { 'binary_sensor.workday_sensor': { workday: true } } };
+  };
+  const m = await mount(b);
+  try {
+    button(m.root, 'previous-week').click();
+    await settle();
+    dates.length = 0;
+    button(m.root, 'overview').click();
+    await settle();
+    const { upcomingDates } = await import('../src/overview.ts');
+    assert.deepEqual(dates.sort(), upcomingDates(b.hass).slice(1).sort());
+    assert.match(m.root.querySelector('.overview-event').textContent, /Uhr/);
+    assert.equal(b.writes.length, 0);
+  } finally {
+    await m.close();
+  }
+});

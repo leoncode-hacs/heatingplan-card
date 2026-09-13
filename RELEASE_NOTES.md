@@ -1,10 +1,10 @@
-## Heating Plan Card 1.2.0
+## Heating Plan Card 1.3.0
 
-- Eine gemeinsame Wochenansicht für feste Wochentage und Arbeitskalender-Pläne.
-- Pausierte Pläne bleiben sichtbar, grau dargestellt und mit **Pausiert** gekennzeichnet. Sie erscheinen nicht mehr als fehlender Tagesplan.
-- Konkrete Daten und Navigation zwischen Wochen machen die Zuordnung nachvollziehbar.
-- Feiertage werden über die Datumsabfrage des Workday-Sensors berücksichtigt. Bei fehlenden Kalenderantworten bleiben mögliche Pläne mit **Zuordnung noch offen** sichtbar.
-- Ohne den vom Scheduler verwendeten Workday-Sensor gilt dessen Standardwoche (Montag bis Freitag), ausdrücklich gekennzeichnet.
-- Auf sehr schmalen Handys bleibt das Datum in der Tagesüberschrift, damit alle sieben Tagestasten Platz haben.
+- Neuer **Gesamtübersicht**-Button neben Neuladen und Plus.
+- Eine kompakte Übersicht zeigt für jeden konfigurierten Raum die nächste geplante Schaltung mit Uhrzeit und Temperatur oder **Aus**, chronologisch sortiert.
+- Ein Tipp auf einen Raum öffnet dessen Heizpläne. **Zur Raumansicht** führt zur vorherigen Ansicht zurück.
+- Pausierte Pläne, fehlende Pläne und nicht erreichbare Thermostate bleiben erkennbar.
+- Kalenderzuordnungen werden für heute und die nächsten sieben Tage berücksichtigt. Unklare Regeln und überlappende aktive Pläne werden gekennzeichnet, ohne ein vermeintlich sicheres Ziel vorzugeben.
+- Die Übersicht passt sich Desktop und Handy an und aktualisiert sich mit den Home-Assistant-Daten.
 
-Die Änderung betrifft die Darstellung. Vorhandene Heizpläne bleiben erhalten; Bearbeiten verändert weiterhin den wiederkehrenden Plan. Nach dem HACS-Update das Home-Assistant-Frontend vollständig neu laden.
+Nach dem HACS-Update das Home-Assistant-Frontend vollständig neu laden. Die Übersicht verändert keine Heizpläne oder Thermostat-Einstellungen.

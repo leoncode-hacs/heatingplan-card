@@ -99,6 +99,21 @@ Plain legacy temperature-only plans keep their previous behavior unless an off
 period or an explicit heating mode is added. The device's own frost-protection
 behavior is independent of the displayed off mode.
 
+## Whole-home overview
+
+Use the four-square **Gesamtübersicht** button beside reload and add to switch
+to a compact list of all configured thermostats. Each row shows the current
+target and the next planned action: date/time and temperature or **Aus**.
+Rooms with upcoming actions are sorted chronologically. Select a room to open
+its schedules, or use **Zur Raumansicht** to return to the previous view.
+
+The forecast checks today and the next seven days in Home Assistant's timezone,
+including Workday calendar assignments. Paused plans, rooms without plans,
+unreachable thermostats and uncertain calendar/advanced rules are labeled.
+Overlapping active plans are flagged instead of choosing a target arbitrarily.
+This is a preview of scheduled actions; other controllers can affect actual
+heating. Opening the overview or a room does not modify a schedule or thermostat.
+
 ## Existing schedules and editing boundaries
 
 The simple editor supports one thermostat per plan, one temperature or off
