@@ -99,6 +99,10 @@ Plain legacy temperature-only plans keep their previous behavior unless an off
 period or an explicit heating mode is added. The device's own frost-protection
 behavior is independent of the displayed off mode.
 
+The week header shows the ISO calendar week, year and full date range.
+**Diese Woche** identifies the current week; navigation labels change for other
+weeks. The outlined **Heute** button returns to the current week and day.
+
 ## Whole-home overview
 
 Use the four-square **Gesamtübersicht** button beside reload and add to switch
@@ -111,6 +115,10 @@ The forecast checks today and the next seven days in Home Assistant's timezone,
 including Workday calendar assignments. Paused plans, rooms without plans,
 unreachable thermostats and uncertain calendar/advanced rules are labeled.
 Overlapping active plans are flagged instead of choosing a target arbitrarily.
+A **Wiederkehrende Pläne** section below both the overview and room view lists
+recurring plans independently of the selected day, including paused plans,
+with their day rules and editing shortcut. Single executions are excluded.
+
 This is a preview of scheduled actions; other controllers can affect actual
 heating. Opening the overview or a room does not modify a schedule or thermostat.
 

@@ -30,6 +30,7 @@ import {
 } from './model.ts';
 import {
   calendarKey,
+  calendarWeek,
   loadCalendarWeek,
   localDate,
   scheduleDay,
@@ -321,7 +322,31 @@ class HeatingPlanCard extends HTMLElement {
       })
       .join(
         '',
-      )}</div><p class="footnote">Tippe auf einen Raum, um seine Heizpläne zu öffnen. Die Vorschau berücksichtigt heute und die nächsten sieben Tage. Andere Steuerungen können die tatsächliche Einstellung ändern.</p></main>`;
+      )}</div><p class="footnote">Tippe auf einen Raum, um seine Heizpläne zu öffnen. Die Vorschau berücksichtigt heute und die nächsten sieben Tage. Andere Steuerungen können die tatsächliche Einstellung ändern.</p>${this.recurringHtml(this.schedules, true)}</main>`;
+  }
+  private recurringHtml(plans: Schedule[], showRooms = false) {
+    const rooms = this.rooms();
+    const recurring = plans.filter(
+      (plan) =>
+        (!plan.repeat_type || plan.repeat_type === 'repeat') &&
+        targets(plan).some((id) => rooms.some((room) => room.id === id)),
+    );
+    return `<section class="recurring" aria-label="Wiederkehrende Pläne"><h3>Wiederkehrende Pläne</h3><p class="muted">Diese Pläne werden an den angegebenen Tagen wiederholt ausgeführt.</p>${
+      recurring.length
+        ? `<div class="recurring-list">${recurring
+            .map((plan) => {
+              const roomNames = rooms
+                .filter((room) => targets(plan).includes(room.id))
+                .map((room) => room.name)
+                .join(', ');
+              const unknown = ['unknown', 'unavailable'].includes(this.hass.states[plan.entity_id]?.state);
+              const enabled = isEnabled(plan, this.hass);
+              const days = dayLabel(plan.weekdays) || 'Besondere Tagesregeln';
+              return `<article class="recurring-plan ${!enabled && !unknown ? 'paused' : ''}"><div class="recurring-copy"><strong>${escape(plan.name || 'Heizplan')}</strong><small>${showRooms ? `${escape(roomNames)} · ` : ''}${escape(days)}</small>${plan.start_date || plan.end_date ? `<small>Zeitraum: ${escape(plan.start_date || 'offen')} bis ${escape(plan.end_date || 'offen')}</small>` : ''}</div><span class="pill ${unknown ? 'warn' : ''}">${unknown ? 'Status unklar' : enabled ? 'Aktiv' : 'Pausiert'}</span>${!editProblem(plan) ? `<button class="btn small" data-action="edit" data-id="${escape(plan.schedule_id)}" aria-label="Wiederkehrenden Plan ${escape(plan.name || 'Heizplan')} bearbeiten">${icon('edit')} Bearbeiten</button>` : '<small>Sonderregeln</small>'}</article>`;
+            })
+            .join('')}</div>`
+        : '<p class="recurring-empty muted">Keine wiederkehrenden Pläne vorhanden.</p>'
+    }</section>`;
   }
   private roomHtml(room: Room) {
     return `<button class="room ${room.id === this.room ? 'active' : ''}" data-action="room" data-id="${escape(room.id)}" aria-current="${room.id === this.room ? 'true' : 'false'}"><span class="room-icon">${icon(room.state.state !== 'off' && room.state.attributes.hvac_action === 'heating' ? 'heat' : 'home')}</span><span class="room-copy"><strong>${escape(room.name)}</strong><small>${room.state.state !== 'off' && room.state.attributes.hvac_action === 'heating' ? '<span class="dot"></span>Heizt gerade' : escape(room.detail)}</small></span><span class="room-temp">${temperature(room.state.attributes.current_temperature)}°</span></button>`;
@@ -330,6 +355,15 @@ class HeatingPlanCard extends HTMLElement {
     const all = this.schedules.filter((s) => targets(s).includes(room.id));
     const dates = weekDates(this.hass, this.weekOffset);
     const date = dates[this.day];
+    const week = calendarWeek(dates[0]);
+    const weekLabel =
+      this.weekOffset === 0
+        ? 'Diese Woche'
+        : this.weekOffset === 1
+          ? 'Nächste Woche'
+          : this.weekOffset === -1
+            ? 'Vorherige Woche'
+            : 'Ausgewählte Woche';
     const visible = all.filter((s) => scheduleDay(s, date, this.calendar) !== 'no');
     const active = all.filter((s) => isEnabled(s, this.hass));
     const next = active.some(usesWorkday) ? null : nextChange(this.schedules, this.hass, room.id);
@@ -338,9 +372,10 @@ class HeatingPlanCard extends HTMLElement {
     const unavailable = ['unavailable', 'unknown'].includes(room.state.state);
     return `<section class="hero"><div class="hero-title"><div class="row" style="margin-bottom:5px"><p class="eyebrow">Raumübersicht</p></div><h2>${escape(room.name)}</h2><small>${escape(room.detail)}</small><div class="readings"><div class="reading"><small>Raumtemperatur</small><strong>${temperature(room.state.attributes.current_temperature)} <span>${escape(this.unit())}</span></strong></div><div class="reading"><small>Aktuell eingestellt</small><strong>${room.state.state === 'off' ? 'Aus' : `${temperature(room.state.attributes.temperature)} <span>${escape(this.unit())}</span>`}</strong></div></div></div><div style="text-align:right"><span class="pill ${unavailable ? 'warn' : ''}">${unavailable ? 'Nicht erreichbar' : room.state.state !== 'off' && room.state.attributes.hvac_action === 'heating' ? `${icon('heat')} Heizt gerade` : room.state.state === 'off' ? 'Heizung aus' : active.length ? 'Heizplan aktiv' : 'Kein aktiver Plan'}</span><br><button class="btn small" style="margin-top:14px" data-action="quick" ${unavailable || this.busy ? 'disabled' : ''}>Heizung steuern</button></div></section>
     <div class="next">${icon('clock')}<span>${overlap ? 'Mehrere Pläne sind gleichzeitig aktiv. Bitte prüfe die Heizzeiten.' : next ? `Nächster Heizabschnitt <strong>${next.minutes < 1440 ? `in ${Math.floor(next.minutes / 60) ? `${Math.floor(next.minutes / 60)} Std. ` : ''}${next.minutes % 60} Min.` : `in ${Math.floor(next.minutes / 1440)} Tagen`}</strong> · ${next.off ? 'Heizung aus' : `${temperature(next.temperature)} ${escape(this.unit())}`}` : active.length ? 'Die nächste Schaltung wird vom aktiven Heizplan bestimmt.' : 'Ohne aktiven Heizplan bleibt die eingestellte Temperatur bestehen.'}</span></div>
-    <div class="between week-head"><div><p class="eyebrow">Deine Woche · ${shortDate(dates[0])}–${shortDate(dates[6])}</p><h3>${DAY_NAMES[this.day]}, ${shortDate(date)}</h3></div><div class="week-navigation"><button class="btn quiet small" data-action="previous-week" aria-label="Vorherige Woche">‹</button><button class="btn quiet small" data-action="today">Heute</button><button class="btn quiet small" data-action="next-week" aria-label="Nächste Woche">›</button></div></div><div class="day-tabs" role="group" aria-label="Wochentag">${DAYS.map((_, i) => `<button class="day-tab ${i === this.day ? 'active' : ''}" data-action="day" data-index="${i}" aria-pressed="${i === this.day}">${SHORT_DAYS[i]}<small>${shortDate(dates[i])}</small>${dates[i] === localDate(this.hass) ? '<span class="today"></span>' : ''}</button>`).join('')}</div>
+    <div class="between week-head"><div><p class="eyebrow">${weekLabel} · KW ${week.week} · ${week.year}</p><p class="week-range">${shortDate(dates[0])}${dates[0].slice(0, 4)} – ${shortDate(dates[6])}${dates[6].slice(0, 4)}</p><h3>${DAY_NAMES[this.day]}, ${shortDate(date)}</h3></div><div class="week-navigation"><button class="btn quiet small" data-action="previous-week" aria-label="Vorherige Woche">‹</button><button class="btn small today-button" data-action="today">Heute</button><button class="btn quiet small" data-action="next-week" aria-label="Nächste Woche">›</button></div></div><div class="day-tabs" role="group" aria-label="Wochentag">${DAYS.map((_, i) => `<button class="day-tab ${i === this.day ? 'active' : ''}" data-action="day" data-index="${i}" aria-pressed="${i === this.day}">${SHORT_DAYS[i]}<small>${shortDate(dates[i])}</small>${dates[i] === localDate(this.hass) ? '<span class="today"></span>' : ''}</button>`).join('')}</div>
     <div class="week-grid" aria-label="Wochenübersicht">${dates.map((date, i) => this.weekColumn(all, date, i)).join('')}</div>
     ${visible.length ? visible.map((plan) => this.planHtml(plan, scheduleDay(plan, date, this.calendar))).join('') : `<div class="empty-state">${icon('sun')}<h3>Kein Heizplan vorhanden</h3><p>Für ${DAY_NAMES[this.day]}, ${shortDate(date)} ist kein Heizplan zugeordnet.</p><button class="btn primary" data-action="new-day">${icon('plus')} Heizzeiten festlegen</button></div>`}
+    ${this.recurringHtml(all)}
     <p class="footnote">Ein pausierter Plan schaltet die Heizung nicht aus. Deine Zeitpläne laufen in Home Assistant weiter, auch wenn du diese Ansicht schließt.</p>`;
   }
   private weekColumn(plans: Schedule[], date: string, day: number) {

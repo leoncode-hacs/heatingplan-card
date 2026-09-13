@@ -941,4 +941,15 @@ select {
   .overview-event { grid-column:1; }
   .overview-room > .icon { grid-column:2; grid-row:1 / 3; }
 }
+.week-range { font-size:20px; font-weight:650; margin:4px 0 8px; }
+.today-button { border-color:var(--hp-accent-text); }
+.recurring { border-top:1px solid var(--hp-line); margin-top:28px; padding-top:22px; }
+.recurring > p { margin-top:6px; }
+.recurring-list { display:grid; gap:8px; margin-top:14px; }
+.recurring-plan { display:flex; align-items:center; gap:14px; flex-wrap:wrap; border:1px solid var(--hp-line); border-radius:12px; padding:14px; }
+.recurring-copy { flex:1 1 180px; min-width:0; overflow-wrap:anywhere; }
+.recurring-copy strong,.recurring-copy small { display:block; }
+.recurring-plan.paused .recurring-copy { color:var(--hp-muted); }
+.recurring-plan > .pill { flex-shrink:0; }
+@container(max-width:350px){.week-range{font-size:17px}}
 `;

@@ -39,6 +39,12 @@ export function weekDates(hass: Hass, offset = 0, now = new Date()): string[] {
 export function shortDate(date: string): string {
   return `${date.slice(8, 10)}.${date.slice(5, 7)}.`;
 }
+export function calendarWeek(date: string): { week: number; year: number } {
+  const thursday = new Date(`${addDays(date, 3 - weekday(date))}T12:00:00Z`);
+  const year = thursday.getUTCFullYear();
+  const start = new Date(`${year}-01-01T12:00:00Z`);
+  return { year, week: Math.ceil(((thursday.getTime() - start.getTime()) / 86400000 + 1) / 7) };
+}
 export function usesWorkday(schedule: Pick<Schedule, 'weekdays'>): boolean {
   return schedule.weekdays.some((day) => day === 'workday' || day === 'weekend');
 }

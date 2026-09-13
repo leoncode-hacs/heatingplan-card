@@ -629,3 +629,50 @@ test('overview queries upcoming dates rather than a previously selected historic
     await m.close();
   }
 });
+
+test('recurring section includes paused and off-day plans but excludes single executions', async () => {
+  const { schedule } = fixture();
+  const repeating = { ...schedule, name: 'Jede Woche', weekdays: ['mon'], enabled: false };
+  const single = {
+    ...clone(schedule),
+    schedule_id: 'once',
+    entity_id: 'switch.once',
+    name: 'Nur einmal',
+    repeat_type: 'single',
+  };
+  const b = backend([repeating, single]);
+  b.hass.states['switch.plan'].state = 'off';
+  const m = await mount(b);
+  try {
+    m.root.querySelector('[data-action="day"][data-index="6"]').click();
+    const section = m.root.querySelector('.recurring');
+    assert.match(section.textContent, /Jede Woche/);
+    assert.match(section.textContent, /Pausiert/);
+    assert.doesNotMatch(section.textContent, /Nur einmal/);
+    button(m.root, 'overview').click();
+    assert.equal(m.root.querySelectorAll('.recurring-plan').length, 1);
+    m.root.querySelector('.recurring [data-action="edit"]').click();
+    await settle();
+    assert.equal(m.root.querySelector('[data-field="name"]').value, 'Jede Woche');
+    assert.equal(b.writes.length, 0);
+  } finally {
+    await m.close();
+  }
+});
+
+test('week header shows current and selected week explicitly and Today restores it', async () => {
+  const m = await mount(backend());
+  try {
+    assert.match(m.root.querySelector('.week-head .eyebrow').textContent, /Diese Woche · KW \d+ · \d{4}/);
+    const range = m.root.querySelector('.week-range').textContent;
+    assert.match(range, /\d{2}\.\d{2}\.\d{4} – \d{2}\.\d{2}\.\d{4}/);
+    button(m.root, 'next-week').click();
+    assert.match(m.root.querySelector('.week-head .eyebrow').textContent, /Nächste Woche/);
+    assert.notEqual(m.root.querySelector('.week-range').textContent, range);
+    button(m.root, 'today').click();
+    assert.match(m.root.querySelector('.week-head .eyebrow').textContent, /Diese Woche/);
+    assert.equal(m.root.querySelector('.week-range').textContent, range);
+  } finally {
+    await m.close();
+  }
+});

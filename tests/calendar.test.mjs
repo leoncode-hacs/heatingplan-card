@@ -93,3 +93,10 @@ test('holiday assignment distinguishes fixed weekdays, workdays, free days and u
   assert.equal(scheduleDay({ ...schedule, weekdays: ['daily'], end_date: date }, date, free), 'yes');
   assert.equal(scheduleDay({ ...schedule, weekdays: ['daily'], end_date: '2026-09-13' }, date, free), 'no');
 });
+
+test('ISO calendar week uses its week-year at both year boundaries', async () => {
+  const { calendarWeek } = await import('../src/calendar.ts');
+  assert.deepEqual(calendarWeek('2027-01-01'), { week: 53, year: 2026 });
+  assert.deepEqual(calendarWeek('2024-12-30'), { week: 1, year: 2025 });
+  assert.deepEqual(calendarWeek('2026-09-13'), { week: 37, year: 2026 });
+});
