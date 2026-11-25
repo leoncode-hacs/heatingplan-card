@@ -1,8 +1,8 @@
-## Heating Plan Card 1.3.1
+## Heating Plan Card 1.3.2
 
-- Zusätzlicher Abschnitt **Wiederkehrende Pläne** unten in der Gesamtübersicht und in der Raumansicht: Plantitel, Wiederholungstage, Status und Bearbeiten-Schaltfläche. Pausierte Pläne bleiben sichtbar; einmalige Ausführungen erscheinen nicht als wiederkehrend.
-- Deutlichere Wochenanzeige mit Kalenderwoche, Jahr und vollständigem Datumsbereich.
-- **Diese Woche** ersetzt **Deine Woche**. Beim Blättern passt sich die Beschriftung der ausgewählten Woche an.
-- Der **Heute**-Button hat einen sichtbaren Rahmen.
+- Bestehende Heizpläne lassen sich wieder zuverlässig bearbeiten. Zuvor erschien teils „Der Speicherauftrag wurde gesendet, konnte aber noch nicht bestätigt werden“.
+- Heizpläne ohne Namen können jetzt gespeichert werden, ohne einen Namen eintragen zu müssen.
+- Der Name eines bestehenden Plans ist schreibgeschützt. Die Scheduler-Integration (v3.3.9) entfernt beim Umbenennen den Schalter des Plans, sodass er bis zum Neustart nicht mehr ausgeführt wird. Einen neuen Namen vergibst du über **Kopieren**.
+- Kopien namenloser Pläne heißen „Heizplan · Kopie“.
 
-Nach dem HACS-Update das Home-Assistant-Frontend vollständig neu laden.
+Falls ein Plan nach einem fehlgeschlagenen Speicherversuch nicht mehr ausgeführt wird, Home Assistant einmal neu starten. Nach dem HACS-Update das Home-Assistant-Frontend vollständig neu laden.
