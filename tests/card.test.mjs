@@ -55,7 +55,8 @@ test('create from empty state, confirmed save and reopen edit', async () => {
     assert.match(m.root.querySelector('[role="status"]').textContent, /gespeichert/);
     button(m.root, 'edit').click();
     await settle();
-    assert.equal(m.root.querySelector('[data-field="name"]').value, 'Mein Sonntag');
+    assert.equal(m.root.querySelector('.fixed-name').textContent, 'Mein Sonntag');
+    assert.equal(m.root.querySelector('[data-field="name"]'), null);
   } finally {
     await m.close();
   }
@@ -420,7 +421,7 @@ test('off selection in the plan editor hides temperature and saves a mode action
   const m = await mount(b);
   try {
     button(m.root, 'new').click();
-    fill(m.w, m.root.querySelector('[data-period-mode="0"]'), 'off');
+    m.root.querySelector('[data-action="period-mode"][data-index="0"][data-value="off"]').click();
     assert.equal(m.root.querySelector('[data-temperature="0"]'), null);
     button(m.root, 'save').click();
     await settle();
@@ -653,7 +654,7 @@ test('recurring section includes paused and off-day plans but excludes single ex
     assert.equal(m.root.querySelectorAll('.recurring-plan').length, 1);
     m.root.querySelector('.recurring [data-action="edit"]').click();
     await settle();
-    assert.equal(m.root.querySelector('[data-field="name"]').value, 'Jede Woche');
+    assert.equal(m.root.querySelector('.fixed-name').textContent, 'Jede Woche');
     assert.equal(b.writes.length, 0);
   } finally {
     await m.close();
@@ -672,6 +673,26 @@ test('week header shows current and selected week explicitly and Today restores 
     button(m.root, 'today').click();
     assert.match(m.root.querySelector('.week-head .eyebrow').textContent, /Diese Woche/);
     assert.equal(m.root.querySelector('.week-range').textContent, range);
+  } finally {
+    await m.close();
+  }
+});
+
+test('editor shows end times live and keeps save errors visible in the footer', async () => {
+  const b = backend();
+  const m = await mount(b);
+  try {
+    button(m.root, 'new').click();
+    assert.equal(m.root.querySelector('[data-end="0"]').textContent, 'bis 06:30');
+    fill(m.w, m.root.querySelector('[data-start="1"]'), '07:15');
+    assert.equal(m.root.querySelector('[data-end="0"]').textContent, 'bis 07:15');
+    assert.equal(m.root.querySelector('#edit-error').hidden, true);
+    fill(m.w, m.root.querySelector('[data-field="name"]'), '');
+    button(m.root, 'save').click();
+    const error = m.root.querySelector('.dialog-footer #edit-error');
+    assert.equal(error.hidden, false);
+    assert.match(error.textContent, /Namen/);
+    assert.equal(b.writes.length, 0);
   } finally {
     await m.close();
   }

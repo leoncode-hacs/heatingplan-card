@@ -593,10 +593,6 @@ select {
   font-size: 15px;
   max-width: 100%;
 }
-.input[readonly] {
-  opacity: 0.7;
-  cursor: default;
-}
 .two-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -956,4 +952,61 @@ select {
 .recurring-plan.paused .recurring-copy { color:var(--hp-muted); }
 .recurring-plan > .pill { flex-shrink:0; }
 @container(max-width:350px){.week-range{font-size:17px}}
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+/* Compact plan editor: one row per period on wide screens, two short rows on phones. */
+.edit-period { grid-template-columns: 172px auto minmax(0, 1fr) 44px; grid-template-areas: "when mode temp delete"; gap: 10px 12px; padding: 10px 0; }
+.edit-period > .period-when { grid-area: when; display:flex; align-items:center; gap:8px; min-width:0; }
+.edit-period > .period-mode { grid-area: mode; justify-self: start; }
+.edit-period > .stepper, .edit-period > .off-period { grid-area: temp; }
+.edit-period > .delete { grid-area: delete; }
+.edit-period input[type="time"] { display:block; width:96px; flex:0 0 96px; margin:0; min-height:44px; padding:8px 10px; }
+.edit-period input[type="time"]:disabled { opacity:1; color:var(--hp-muted); background:transparent; border-color:transparent; }
+.period-end { font-size:13px; color:var(--hp-muted); white-space:nowrap; }
+.period-mode { display:inline-flex; border:1px solid var(--hp-line); border-radius:10px; padding:2px; gap:2px; background:var(--hp-bg); }
+.mode-chip { border:0; background:transparent; color:var(--hp-muted); border-radius:8px; min-height:40px; padding:0 12px; font-size:13px; font-weight:600; }
+.mode-chip.active { background:var(--hp-tint); color:var(--hp-accent-text); }
+.mode-chip:disabled { opacity:.4; }
+.edit-period .stepper { max-width:200px; }
+.edit-period .stepper button { flex-basis:40px; width:40px; height:44px; }
+.edit-period .stepper input { min-height:44px; font-size:17px; font-weight:600; }
+.edit-period .off-period { padding:0; color:var(--hp-muted); font-size:14px; }
+.fixed-fields { display:grid; grid-template-columns:1fr 1fr; gap:4px 16px; margin-bottom:18px; }
+.fixed-fields small { display:block; font-size:11px; color:var(--hp-muted); }
+.fixed-fields strong { display:block; font-size:16px; overflow-wrap:anywhere; }
+.fixed-fields .helper { grid-column:1 / -1; margin:6px 0 0; }
+.dialog-footer { flex-wrap:wrap; }
+.footer-error { flex:1 1 100%; padding:0 0 4px; }
+.footer-error[hidden] { display:none; }
+@media (max-width: 600px) {
+  .edit-period { grid-template-columns: minmax(0, 1fr) auto 44px; grid-template-areas: "when when delete" "mode temp temp"; padding: 12px 0; gap: 8px 10px; }
+  .edit-period > .period-when { grid-area: when; }
+  .edit-period > .period-mode { grid-area: mode; }
+  .edit-period > .stepper, .edit-period > .off-period { grid-area: temp; }
+  .edit-period > .delete { grid-area: delete; }
+  .edit-period .stepper { max-width:none; width:auto; justify-self:end; }
+  .edit-period .stepper input { width:64px; flex:0 0 64px; }
+  .edit-period .off-period { justify-self:end; }
+  .fixed-fields { grid-template-columns:1fr; }
+}
+/* Phone overview: the room picker is the heading; status and week header are condensed. */
+@container (max-width:760px) {
+  .room-select { margin-bottom:8px; }
+  .room-select select { margin-top:0; border:0; background-color:transparent; padding:4px 28px 4px 0; min-height:44px; font-size:24px; font-weight:750; letter-spacing:-.5px; color:var(--hp-fg); }
+  .hero-title > .row, .hero-title > h2, .hero-title > small { display:none; }
+  .hero { margin-bottom:12px; }
+  .readings { margin-top:0; }
+  .hero > div:last-child { margin-top:10px; }
+  .next { margin:0 0 16px; padding:10px 12px; }
+  .week-head { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; column-gap:8px; }
+  .week-head > div:first-child { display:contents; }
+  .week-head .eyebrow { grid-column:1 / -1; }
+  .week-head h3 { grid-column:1; }
+  .week-navigation { grid-column:2; }
+  .week-head .week-range { display:none; }
+  .week-head h3 { font-size:17px; margin-top:2px; }
+  .week-navigation { margin-left:0; flex-shrink:0; }
+  .recurring-plan { flex-wrap:nowrap; padding:10px 12px; gap:10px; }
+  .recurring-copy { flex:1 1 auto; }
+  .recurring-plan .btn { padding:8px 10px; }
+}
 `;
