@@ -687,7 +687,11 @@ test('editor shows end times live and keeps save errors visible in the footer', 
     fill(m.w, m.root.querySelector('[data-start="1"]'), '07:15');
     assert.equal(m.root.querySelector('[data-end="0"]').textContent, 'bis 07:15');
     assert.equal(m.root.querySelector('#edit-error').hidden, true);
-    fill(m.w, m.root.querySelector('[data-field="name"]'), '');
+    const name = m.root.querySelector('[data-field="name"]');
+    assert.equal(name.value, '');
+    assert.match(name.getAttribute('placeholder'), / · Mo–Fr$/);
+    m.root.querySelector('[data-day="sat"]')?.click();
+    fill(m.w, name, 'x'.repeat(81));
     button(m.root, 'save').click();
     const error = m.root.querySelector('.dialog-footer #edit-error');
     assert.equal(error.hidden, false);
@@ -768,6 +772,19 @@ test('horizontal swipe on the room view changes the day and rolls over weeks', a
     touch('touchend', 300);
     assert.equal(m.root.querySelector('.day-tab.active').dataset.index, '6');
     assert.equal(m.root.querySelector('.week-head .eyebrow').textContent, week);
+  } finally {
+    await m.close();
+  }
+});
+
+test('plans without an own name show an automatic name from room and days', async () => {
+  const { schedule } = fixture();
+  delete schedule.name;
+  schedule.weekdays = ['mon', 'tue', 'wed', 'thu', 'fri'];
+  const m = await mount(backend([schedule]));
+  try {
+    assert.ok(m.root.textContent.includes('Bad · Mo–Fr'), m.root.textContent.slice(0, 400));
+    assert.ok(!m.root.textContent.includes('Heizplan (ohne Namen)'));
   } finally {
     await m.close();
   }

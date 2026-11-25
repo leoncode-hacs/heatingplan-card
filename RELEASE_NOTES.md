@@ -1,3 +1,15 @@
+## Heating Plan Card 1.4.2
+
+**Automatische Namen für Heizpläne**
+
+- Der Name eines Heizplans ist jetzt **optional**. Bleibt das Feld leer, zeigt die Card einen Namen aus **Raum und Tagen**, zum Beispiel „Wohnzimmer · Mo–Fr“, „Bad · Wochenende“ oder „Küche · Arbeitstage“.
+- Der automatische Name wird nicht gespeichert, sondern immer neu gebildet. Änderst du die Tage, passt er sich von selbst an.
+- Im Editor steht der Vorschlag als Platzhalter im Namensfeld und ändert sich sofort mit der Tagesauswahl.
+- Bestehende Pläne ohne Namen erscheinen nicht mehr als „Heizplan“, sondern ebenfalls mit ihrem automatischen Namen.
+- Neue Pläne bekommen keinen vorgegebenen Namen mehr. Eine Kopie eines unbenannten Plans bleibt unbenannt.
+
+Nach dem HACS-Update das Home-Assistant-Frontend vollständig neu laden.
+
 ## Heating Plan Card 1.4.1
 
 Weitere Verbesserungen für Bedienung und Handy.

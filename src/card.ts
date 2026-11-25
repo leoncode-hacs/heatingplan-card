@@ -31,6 +31,7 @@ import {
   dayChoice,
   choiceDays,
   favoriteTemperatures,
+  autoName,
 } from './model.ts';
 import {
   calendarKey,
@@ -325,7 +326,7 @@ class HeatingPlanCard extends HTMLElement {
         const when = event
           ? `${event.date === today ? 'Heute' : event.date === dates[1] ? 'Morgen' : shortDate(event.date)} · ${clock(event.minute)} Uhr`
           : '';
-        return `<button class="overview-room ${row.status === 'paused' ? 'paused' : ''}" data-action="overview-room" data-id="${escape(row.room.id)}" aria-label="${escape(row.room.name)}: Heizpläne ansehen"><span class="overview-room-name"><strong>${escape(row.room.name)}</strong><small>${escape(row.room.detail)} · ${row.unavailable ? 'Nicht erreichbar' : `Jetzt ${row.room.state.state === 'off' ? 'Aus' : `${temperature(row.room.state.attributes.temperature)} ${escape(this.unit())}`}`}</small></span><span class="overview-event">${event ? `<span class="overview-time">${when}</span><strong>${row.status === 'conflict' ? 'Pläne prüfen' : escape(temperatureText(event.slot, this.unit()))}</strong>` : `<strong>${labels[row.status]}</strong>`}<small>${row.status === 'next' && event ? escape(event.plan.name || 'Heizplan') : row.status === 'unknown' ? 'Kalender, Sonderregeln oder Planstatus prüfen' : row.status === 'conflict' ? labels.conflict : ''}${row.paused && row.status !== 'paused' ? ` · ${row.paused} pausiert` : ''}</small></span>${icon('arrow')}</button>`;
+        return `<button class="overview-room ${row.status === 'paused' ? 'paused' : ''}" data-action="overview-room" data-id="${escape(row.room.id)}" aria-label="${escape(row.room.name)}: Heizpläne ansehen"><span class="overview-room-name"><strong>${escape(row.room.name)}</strong><small>${escape(row.room.detail)} · ${row.unavailable ? 'Nicht erreichbar' : `Jetzt ${row.room.state.state === 'off' ? 'Aus' : `${temperature(row.room.state.attributes.temperature)} ${escape(this.unit())}`}`}</small></span><span class="overview-event">${event ? `<span class="overview-time">${when}</span><strong>${row.status === 'conflict' ? 'Pläne prüfen' : escape(temperatureText(event.slot, this.unit()))}</strong>` : `<strong>${labels[row.status]}</strong>`}<small>${row.status === 'next' && event ? escape(this.planName(event.plan)) : row.status === 'unknown' ? 'Kalender, Sonderregeln oder Planstatus prüfen' : row.status === 'conflict' ? labels.conflict : ''}${row.paused && row.status !== 'paused' ? ` · ${row.paused} pausiert` : ''}</small></span>${icon('arrow')}</button>`;
       })
       .join(
         '',
@@ -349,7 +350,7 @@ class HeatingPlanCard extends HTMLElement {
               const unknown = ['unknown', 'unavailable'].includes(this.hass.states[plan.entity_id]?.state);
               const enabled = isEnabled(plan, this.hass);
               const days = dayLabel(plan.weekdays) || 'Besondere Tagesregeln';
-              return `<article class="recurring-plan ${!enabled && !unknown ? 'paused' : ''}"><div class="recurring-copy"><strong>${escape(plan.name || 'Heizplan')}</strong><small>${showRooms ? `${escape(roomNames)} · ` : ''}${escape(days)}</small>${plan.start_date || plan.end_date ? `<small>Zeitraum: ${escape(plan.start_date || 'offen')} bis ${escape(plan.end_date || 'offen')}</small>` : ''}</div><span class="pill ${unknown ? 'warn' : ''}">${unknown ? 'Status unklar' : enabled ? 'Aktiv' : 'Pausiert'}</span>${!editProblem(plan) ? `<button class="btn small" data-action="edit" data-id="${escape(plan.schedule_id)}" aria-label="Wiederkehrenden Plan ${escape(plan.name || 'Heizplan')} bearbeiten">${icon('edit')}<span class="btn-label"> Bearbeiten</span></button>` : '<small>Sonderregeln</small>'}</article>`;
+              return `<article class="recurring-plan ${!enabled && !unknown ? 'paused' : ''}"><div class="recurring-copy"><strong>${escape(this.planName(plan))}</strong><small>${showRooms ? `${escape(roomNames)} · ` : ''}${escape(days)}</small>${plan.start_date || plan.end_date ? `<small>Zeitraum: ${escape(plan.start_date || 'offen')} bis ${escape(plan.end_date || 'offen')}</small>` : ''}</div><span class="pill ${unknown ? 'warn' : ''}">${unknown ? 'Status unklar' : enabled ? 'Aktiv' : 'Pausiert'}</span>${!editProblem(plan) ? `<button class="btn small" data-action="edit" data-id="${escape(plan.schedule_id)}" aria-label="Wiederkehrenden Plan ${escape(this.planName(plan))} bearbeiten">${icon('edit')}<span class="btn-label"> Bearbeiten</span></button>` : '<small>Sonderregeln</small>'}</article>`;
             })
             .join('')}</div>`
         : '<p class="recurring-empty muted">Keine wiederkehrenden Pläne vorhanden.</p>'
@@ -385,6 +386,16 @@ class HeatingPlanCard extends HTMLElement {
     ${this.recurringHtml(all)}
     <p class="footnote">Ein pausierter Plan schaltet die Heizung nicht aus. Deine Zeitpläne laufen in Home Assistant weiter, auch wenn du diese Ansicht schließt.</p>`;
   }
+  private roomName(entity?: string) {
+    if (!entity) return undefined;
+    return (
+      this.rooms().find((room) => room.id === entity)?.name ||
+      roomList(this.hass, [entity])[0]?.name
+    );
+  }
+  private planName(plan: Schedule) {
+    return plan.name?.trim() || autoName(plan.weekdays, this.roomName(targets(plan)[0]));
+  }
   private nextParts(next: { minutes: number; temperature: number; off: boolean }) {
     const now = currentClock(this.hass),
       total = now.minute + next.minutes,
@@ -416,7 +427,7 @@ class HeatingPlanCard extends HTMLElement {
             .map((plan) => {
               const match = scheduleDay(plan, date, this.calendar),
                 enabled = isEnabled(plan, this.hass);
-              return `<div class="week-plan ${enabled ? '' : 'paused'} ${match === 'unknown' ? 'uncertain' : ''}"><div class="week-plan-label"><strong>${escape(plan.name || 'Heizplan')}</strong><span>${enabled ? 'Aktiv' : 'Pausiert'}</span>${this.calendarNote(plan, match, date)}</div>${editProblem(plan) ? '<div class="segment empty">Sonderregeln</div>' : plan.timeslots.map((slot) => `<div class="segment ${Number(slot.actions[0].service_data?.temperature) >= 20 ? 'warm' : ''}"><span>${escape(slot.start.slice(0, 5))}</span><strong>${slotIsOff(slot) ? 'Aus' : `${temperature(slot.actions[0].service_data?.temperature)}°`}</strong></div>`).join('')}</div>`;
+              return `<div class="week-plan ${enabled ? '' : 'paused'} ${match === 'unknown' ? 'uncertain' : ''}"><div class="week-plan-label"><strong>${escape(this.planName(plan))}</strong><span>${enabled ? 'Aktiv' : 'Pausiert'}</span>${this.calendarNote(plan, match, date)}</div>${editProblem(plan) ? '<div class="segment empty">Sonderregeln</div>' : plan.timeslots.map((slot) => `<div class="segment ${Number(slot.actions[0].service_data?.temperature) >= 20 ? 'warm' : ''}"><span>${escape(slot.start.slice(0, 5))}</span><strong>${slotIsOff(slot) ? 'Aus' : `${temperature(slot.actions[0].service_data?.temperature)}°`}</strong></div>`).join('')}</div>`;
             })
             .join('')
         : '<div class="segment empty">Kein Heizplan</div>'
@@ -432,7 +443,7 @@ class HeatingPlanCard extends HTMLElement {
     const problem = editProblem(plan),
       enabled = isEnabled(plan, this.hass),
       now = currentClock(this.hass);
-    return `<article class="plan ${enabled ? '' : 'paused'} ${match === 'unknown' ? 'uncertain' : ''}"><div class="plan-head"><div><h3>${escape(plan.name || 'Heizplan')}</h3><small>${escape(dayLabel(plan.weekdays))}</small>${this.calendarNote(plan, match, weekDates(this.hass, this.weekOffset)[this.day])}</div><span class="pill ${match === 'unknown' ? 'warn' : ''}">${enabled ? 'Aktiv' : 'Pausiert'}</span></div><div class="plan-body">${
+    return `<article class="plan ${enabled ? '' : 'paused'} ${match === 'unknown' ? 'uncertain' : ''}"><div class="plan-head"><div><h3>${escape(this.planName(plan))}</h3><small>${escape(dayLabel(plan.weekdays))}</small>${this.calendarNote(plan, match, weekDates(this.hass, this.weekOffset)[this.day])}</div><span class="pill ${match === 'unknown' ? 'warn' : ''}">${enabled ? 'Aktiv' : 'Pausiert'}</span></div><div class="plan-body">${
       problem
         ? `<div class="notice" style="margin:14px">${icon('lock')} ${escape(problem)} Die Einstellungen bleiben erhalten. Bearbeite diesen Plan in deiner bisherigen Scheduler-Oberfläche.</div>`
         : plan.timeslots
@@ -446,7 +457,7 @@ class HeatingPlanCard extends HTMLElement {
               return `<div class="period ${current ? 'active-period' : ''}">${icon(Number(slot.actions[0].service_data?.temperature) >= 20 ? 'sun' : 'moon')}<div><strong>${escape(slot.start.slice(0, 5))} – ${clock(endMinutes(slot.stop!))}</strong>${current ? '<small>Jetzt im Heizplan</small>' : ''}</div><div class="period-temp">${escape(temperatureText(slot, this.unit()))}</div></div>`;
             })
             .join('')
-    }</div><footer class="plan-footer"><button class="toggle" role="switch" aria-checked="${enabled}" aria-label="Heizplan ${escape(plan.name || 'Heizplan')} aktiv" data-action="toggle" data-id="${escape(plan.schedule_id)}" ${this.busy ? 'disabled' : ''}><span class="switch"></span>${enabled ? 'Plan aktiv' : 'Plan pausiert'}</button><div class="plan-actions"><button class="btn quiet small" data-action="delete" data-id="${escape(plan.schedule_id)}" aria-label="Heizplan ${escape(plan.name || 'Heizplan')} löschen" ${this.busy ? 'disabled' : ''}>${icon('bin')}</button>${!problem ? `<button class="btn quiet small" data-action="copy" data-id="${escape(plan.schedule_id)}" ${this.busy ? 'disabled' : ''}>${icon('copy')} Kopieren</button><button class="btn small" data-action="edit" data-id="${escape(plan.schedule_id)}" ${this.busy ? 'disabled' : ''}>${icon('edit')} Bearbeiten</button>` : ''}</div></footer></article>`;
+    }</div><footer class="plan-footer"><button class="toggle" role="switch" aria-checked="${enabled}" aria-label="Heizplan ${escape(this.planName(plan))} aktiv" data-action="toggle" data-id="${escape(plan.schedule_id)}" ${this.busy ? 'disabled' : ''}><span class="switch"></span>${enabled ? 'Plan aktiv' : 'Plan pausiert'}</button><div class="plan-actions"><button class="btn quiet small" data-action="delete" data-id="${escape(plan.schedule_id)}" aria-label="Heizplan ${escape(this.planName(plan))} löschen" ${this.busy ? 'disabled' : ''}>${icon('bin')}</button>${!problem ? `<button class="btn quiet small" data-action="copy" data-id="${escape(plan.schedule_id)}" ${this.busy ? 'disabled' : ''}>${icon('copy')} Kopieren</button><button class="btn small" data-action="edit" data-id="${escape(plan.schedule_id)}" ${this.busy ? 'disabled' : ''}>${icon('edit')} Bearbeiten</button>` : ''}</div></footer></article>`;
   }
   private editorHtml(session: EditSession) {
     const draft = session.draft,
@@ -457,8 +468,8 @@ class HeatingPlanCard extends HTMLElement {
       );
     return `<dialog class="sheet" role="dialog" aria-modal="true" aria-labelledby="edit-title"><section class="dialog"><header class="dialog-head"><div><p class="eyebrow">Heizzeiten gestalten</p><h2 id="edit-title">${session.original ? 'Heizplan bearbeiten' : 'Neuer Heizplan'}</h2></div><button class="btn quiet" data-action="close" aria-label="Editor schließen" ${this.busy ? 'disabled' : ''}>${icon('close')}</button></header><div class="dialog-body" ${this.busy ? 'inert' : ''}>${
       session.original
-        ? `<div class="fixed-fields"><div><small>Name</small><strong class="fixed-name">${escape(draft.name.trim() || 'Heizplan (ohne Namen)')}</strong></div><div><small>Thermostat</small><strong>${escape(this.rooms().find((r) => r.id === draft.entity)?.name || draft.entity)}</strong></div><p class="helper">Name und Thermostat sind fest. Über „Kopieren“ legst du den Plan unter neuem Namen an.</p></div>`
-        : `<div class="two-fields"><label class="field">Name des Plans<input class="input" data-field="name" value="${escape(draft.name)}" maxlength="80" autocomplete="off"></label><label class="field">Thermostat<select data-field="entity">${this.rooms()
+        ? `<div class="fixed-fields"><div><small>Name</small><strong class="fixed-name">${escape(draft.name.trim() || autoName(draft.weekdays, this.roomName(draft.entity)))}</strong>${draft.name.trim() ? '' : '<small class="auto-note">Automatischer Name aus Raum und Tagen</small>'}</div><div><small>Thermostat</small><strong>${escape(this.rooms().find((r) => r.id === draft.entity)?.name || draft.entity)}</strong></div><p class="helper">Name und Thermostat sind fest. Über „Kopieren“ legst du den Plan unter neuem Namen an.</p></div>`
+        : `<div class="two-fields"><label class="field">Name des Plans <span class="optional">(optional)</span><input class="input" data-field="name" value="${escape(draft.name)}" maxlength="80" autocomplete="off" placeholder="${escape(autoName(draft.weekdays, this.roomName(draft.entity)))}" aria-describedby="name-auto"><small class="helper" id="name-auto">Leer lassen für einen automatischen Namen aus Raum und Tagen.</small></label><label class="field">Thermostat<select data-field="entity">${this.rooms()
             .map(
               (r) =>
                 `<option value="${escape(r.id)}" ${r.id === draft.entity ? 'selected' : ''}>${escape(r.name)} · ${escape(r.detail)}</option>`,
@@ -508,7 +519,7 @@ class HeatingPlanCard extends HTMLElement {
     timeline.innerHTML = this.timelineHtml(this.edit.draft);
   }
   private deleteHtml() {
-    return `<dialog class="sheet" role="dialog" aria-modal="true" aria-labelledby="delete-title"><section class="dialog" style="max-width:460px;height:auto"><header class="dialog-head"><h2 id="delete-title">Heizplan löschen?</h2></header><div class="dialog-body"><p><strong>${escape(this.deletion!.schedule.name || 'Heizplan')}</strong> wird dauerhaft gelöscht. Die aktuell eingestellte Raumtemperatur bleibt bestehen.</p><p class="helper">Du kannst den Plan stattdessen pausieren, wenn du ihn später wieder verwenden möchtest.</p><div role="alert" class="inline-error">${escape(this.deletion!.error)}</div></div><footer class="dialog-footer"><button class="btn" data-action="close" ${this.busy ? 'disabled' : ''}>Behalten</button><button class="btn primary" data-action="confirm-delete" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Wird gelöscht …' : 'Endgültig löschen'}</button></footer></section></dialog>`;
+    return `<dialog class="sheet" role="dialog" aria-modal="true" aria-labelledby="delete-title"><section class="dialog" style="max-width:460px;height:auto"><header class="dialog-head"><h2 id="delete-title">Heizplan löschen?</h2></header><div class="dialog-body"><p><strong>${escape(this.planName(this.deletion!.schedule))}</strong> wird dauerhaft gelöscht. Die aktuell eingestellte Raumtemperatur bleibt bestehen.</p><p class="helper">Du kannst den Plan stattdessen pausieren, wenn du ihn später wieder verwenden möchtest.</p><div role="alert" class="inline-error">${escape(this.deletion!.error)}</div></div><footer class="dialog-footer"><button class="btn" data-action="close" ${this.busy ? 'disabled' : ''}>Behalten</button><button class="btn primary" data-action="confirm-delete" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Wird gelöscht …' : 'Endgültig löschen'}</button></footer></section></dialog>`;
   }
   private quickHtml() {
     const room = this.selected()!,
@@ -570,6 +581,9 @@ class HeatingPlanCard extends HTMLElement {
       this.edit.draft.weekdays = DAYS.filter((day) =>
         day === el.dataset.day ? el.checked : days.includes(day),
       );
+      this.root
+        .querySelector('[data-field="name"]')
+        ?.setAttribute('placeholder', autoName(this.edit.draft.weekdays, this.roomName(this.edit.draft.entity)));
     }
     if (el.dataset.field === 'calendar') {
       const choice = el.value as Parameters<typeof choiceDays>[0];
@@ -695,7 +709,6 @@ class HeatingPlanCard extends HTMLElement {
       const room = this.selected();
       if (room) {
         const draft = newDraft(room.id, this.hass);
-        draft.name = `${room.name} · ${action === 'new-day' ? DAY_NAMES[this.day] : 'Wohlfühlzeiten'}`;
         if (action === 'new-day') draft.weekdays = [DAYS[this.day]];
         this.openDraft(draft);
       }
@@ -707,7 +720,7 @@ class HeatingPlanCard extends HTMLElement {
         if (problem) throw new Error(problem);
         const draft = toDraft(original);
         if (action === 'copy') {
-          draft.name = `${draft.name.trim() || 'Heizplan'} · Kopie`.slice(0, 80);
+          draft.name = draft.name.trim() ? `${draft.name.trim()} · Kopie`.slice(0, 80) : '';
           this.openDraft(draft);
         } else this.openDraft(draft, original);
       } catch (error) {

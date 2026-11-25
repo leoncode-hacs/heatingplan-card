@@ -1045,4 +1045,7 @@ select {
   .recurring-plan .btn-label { display:none; }
   .recurring-plan .btn { min-width:44px; justify-content:center; }
 }
+.field .optional { font-weight:400; color:var(--muted, var(--secondary-text-color)); }
+.field .helper { display:block; margin-top:4px; }
+.auto-note { display:block; color:var(--muted, var(--secondary-text-color)); font-size:12px; margin-top:2px; }
 `;

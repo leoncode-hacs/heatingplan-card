@@ -155,7 +155,7 @@ export function newDraft(entity: string, hass: Hass): Draft {
     return Math.min(range.max, Math.max(range.min, Math.round(v / range.step) * range.step));
   };
   return {
-    name: 'Mein Heizplan',
+    name: '',
     entity,
     weekdays: DAYS.slice(0, 5),
     periods: [
@@ -178,8 +178,7 @@ export function validateDraft(draft: Draft, hass: Hass, original?: Schedule): st
     return 'Bitte wähle ein vorhandenes Thermostat.';
   if (renamed(draft, original))
     return 'Der Name eines bestehenden Plans kann nicht geändert werden. Kopiere den Plan, um ihn unter neuem Namen anzulegen.';
-  if ((!original && !draft.name.trim()) || draft.name.length > 80)
-    return 'Bitte gib einen Namen mit höchstens 80 Zeichen ein.';
+  if (draft.name.length > 80) return 'Bitte gib einen Namen mit höchstens 80 Zeichen ein.';
   if (
     !draft.weekdays.length ||
     new Set(draft.weekdays).size !== draft.weekdays.length ||
@@ -221,7 +220,8 @@ export function payload(draft: Draft, original?: Schedule): Record<string, unkno
   return {
     // Never send the name when editing: any name in the request that differs from the
     // stored value (including null vs. "") triggers the broken rename path in the backend.
-    ...(original ? {} : { name: draft.name.trim() }),
+    // Without an own name the plan is stored unnamed and shown with an automatic name.
+    ...(original || !draft.name.trim() ? {} : { name: draft.name.trim() }),
     weekdays: [...draft.weekdays],
     repeat_type: original?.repeat_type || 'repeat',
     tags: original?.tags || ['heatingplan-card'],
@@ -391,4 +391,22 @@ export function favoriteTemperatures(schedules: Schedule[], entity: string, extr
     .slice(0, 3)
     .map(([value]) => value)
     .sort((a, b) => a - b);
+}
+// Short day rhythm for automatic plan names, e.g. "Mo–Fr", "Täglich", "Arbeitstage".
+export function shortDays(weekdays: string[]): string {
+  if (weekdays.includes('workday')) return 'Arbeitstage';
+  if (weekdays.includes('weekend')) return 'Freie Tage';
+  const days = DAYS.filter((day) => weekdays.includes('daily') || weekdays.includes(day));
+  if (days.length === 7) return 'Täglich';
+  if (!days.length) return 'Ohne Tage';
+  const indices = days.map((day) => DAYS.indexOf(day));
+  if (indices.length === 2 && indices[0] === 5 && indices[1] === 6) return 'Wochenende';
+  const contiguous = indices.every((value, i) => i === 0 || value === indices[i - 1] + 1);
+  if (contiguous && indices.length > 2)
+    return `${SHORT_DAYS[indices[0]]}–${SHORT_DAYS[indices[indices.length - 1]]}`;
+  return indices.map((i) => SHORT_DAYS[i]).join(', ');
+}
+// Name shown (not stored) for plans without an own name, so it stays correct when days change.
+export function autoName(weekdays: string[], room?: string): string {
+  return room ? `${room} · ${shortDays(weekdays)}` : `Heizplan · ${shortDays(weekdays)}`;
 }

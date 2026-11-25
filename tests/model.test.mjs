@@ -18,6 +18,8 @@ import {
   dayChoice,
   choiceDays,
   favoriteTemperatures,
+  shortDays,
+  autoName,
   fingerprint,
 } from '../src/model.ts';
 
@@ -92,7 +94,7 @@ test('validates sorted times, duplicates, range, supported temperature step and 
     (d) => (d.periods[1].temperature = 40),
     (d) => (d.periods[1].temperature = 19.3),
     (d) => (d.weekdays = []),
-    (d) => (d.name = ''),
+    (d) => (d.name = 'x'.repeat(81)),
     (d) => (d.weekdays = ['workday', 'mon']),
   ]) {
     const d = clone(draft);
@@ -210,4 +212,24 @@ test('favourite temperatures are the most used values of the room, ascending', (
   ]);
   assert.deepEqual(fav, [17, 19, 21]);
   assert.deepEqual(favoriteTemperatures([schedule], 'climate.other'), []);
+});
+
+test('automatic names describe the room and the day rhythm', () => {
+  assert.equal(shortDays(DAYS.slice(0, 5)), 'Mo–Fr');
+  assert.equal(shortDays(['daily']), 'Täglich');
+  assert.equal(shortDays(['sat', 'sun']), 'Wochenende');
+  assert.equal(shortDays(['workday']), 'Arbeitstage');
+  assert.equal(shortDays(['weekend']), 'Freie Tage');
+  assert.equal(shortDays(['wed', 'mon']), 'Mo, Mi');
+  assert.equal(shortDays(['mon', 'tue', 'wed']), 'Mo–Mi');
+  assert.equal(autoName(['workday'], 'Wohnzimmer'), 'Wohnzimmer · Arbeitstage');
+  assert.equal(autoName(['sun']), 'Heizplan · So');
+});
+test('new plans without an own name are stored unnamed', () => {
+  const { hass, entity } = fixture();
+  const draft = newDraft(entity, hass);
+  assert.equal(draft.name, '');
+  assert.equal(validateDraft(draft, hass), null);
+  assert.ok(!('name' in payload(draft)));
+  assert.equal(payload({ ...draft, name: ' Bad ' }).name, 'Bad');
 });
