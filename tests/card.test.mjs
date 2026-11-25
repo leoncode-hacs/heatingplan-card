@@ -697,3 +697,78 @@ test('editor shows end times live and keeps save errors visible in the footer', 
     await m.close();
   }
 });
+
+test('editor inserts a period between two rows, offers favourites and a single day choice', async () => {
+  const { schedule } = fixture();
+  schedule.weekdays = ['daily'];
+  const b = backend([schedule]);
+  const m = await mount(b);
+  try {
+    button(m.root, 'edit').click();
+    await settle();
+    // happy-dom reports a wrong select.value here; the selected attribute is what the browser uses.
+    assert.equal(m.root.querySelector('[data-field="calendar"] option[selected]').value, 'all');
+    assert.equal(m.root.querySelector('[data-day]'), null);
+    fill(m.w, m.root.querySelector('[data-field="calendar"]'), 'custom');
+    assert.equal(m.root.querySelectorAll('[data-day]').length, 7);
+    const sunday = m.root.querySelector('[data-day="sun"]');
+    sunday.checked = false;
+    sunday.dispatchEvent(new m.w.Event('change', { bubbles: true }));
+    m.root.querySelector('[data-action="insert-period"][data-index="0"]').click();
+    assert.equal(m.root.querySelector('[data-start="1"]').value, '03:30');
+    assert.equal(m.root.querySelector('[data-end="0"]').textContent, 'bis 03:30');
+    assert.ok(m.root.querySelectorAll('.tl-seg').length >= 3);
+    m.root.querySelector('[data-action="set-temperature"][data-index="2"][data-value="17"]').click();
+    button(m.root, 'save').click();
+    await settle();
+    assert.deepEqual(b.schedules[0].weekdays, DAYS_WITHOUT_SUNDAY);
+    assert.deepEqual(b.schedules[0].timeslots.map((t) => t.start), ['00:00:00', '03:30:00', '07:00:00']);
+    assert.equal(b.schedules[0].timeslots[2].actions[0].service_data.temperature, 17);
+  } finally {
+    await m.close();
+  }
+});
+const DAYS_WITHOUT_SUNDAY = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
+test('Today appears only away from today and the quick dialog says when the plan takes over', async () => {
+  const { schedule } = fixture();
+  schedule.weekdays = ['daily'];
+  const b = backend([schedule]);
+  const m = await mount(b);
+  try {
+    assert.equal(button(m.root, 'today'), null);
+    button(m.root, 'next-week').click();
+    assert.ok(button(m.root, 'today'));
+    button(m.root, 'today').click();
+    button(m.root, 'quick').click();
+    assert.match(m.root.querySelector('.quick-until').textContent, /Gilt bis .*\d{2}:\d{2}\. Dann übernimmt der Heizplan: (17|21) °C/);
+    assert.equal(b.writes.length, 0);
+  } finally {
+    await m.close();
+  }
+});
+
+test('horizontal swipe on the room view changes the day and rolls over weeks', async () => {
+  const m = await mount(backend());
+  try {
+    const touch = (type, x) => {
+      const event = new m.w.Event(type, { bubbles: true, composed: true });
+      const point = [{ clientX: x, clientY: 300 }];
+      Object.defineProperty(event, type === 'touchstart' ? 'touches' : 'changedTouches', { value: point });
+      if (type === 'touchstart') Object.defineProperty(event, 'changedTouches', { value: point });
+      m.root.querySelector('.next').dispatchEvent(event);
+    };
+    m.root.querySelector('[data-action="day"][data-index="6"]').click();
+    const week = m.root.querySelector('.week-head .eyebrow').textContent;
+    touch('touchstart', 300);
+    touch('touchend', 120);
+    assert.equal(m.root.querySelector('.day-tab.active').dataset.index, '0');
+    assert.notEqual(m.root.querySelector('.week-head .eyebrow').textContent, week);
+    touch('touchstart', 100);
+    touch('touchend', 300);
+    assert.equal(m.root.querySelector('.day-tab.active').dataset.index, '6');
+    assert.equal(m.root.querySelector('.week-head .eyebrow').textContent, week);
+  } finally {
+    await m.close();
+  }
+});

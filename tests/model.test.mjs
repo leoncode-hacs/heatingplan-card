@@ -14,6 +14,10 @@ import {
   conflicts,
   currentClock,
   insertPeriod,
+  splitPeriod,
+  dayChoice,
+  choiceDays,
+  favoriteTemperatures,
   fingerprint,
 } from '../src/model.ts';
 
@@ -176,4 +180,34 @@ test('plain existing turn_off is editable but additional off service data is pro
   assert.equal(toDraft(schedule).periods[0].mode, 'off');
   schedule.timeslots[0].actions[0].service_data = { unknown_option: true };
   assert.ok(editProblem(schedule));
+});
+
+test('split period inserts the half-way point and refuses too-short periods', () => {
+  const periods = [{ start: 0, temperature: 17 }, { start: 390, temperature: 21, mode: 'heat' }, { start: 405, temperature: 18 }];
+  const split = splitPeriod(periods, 0);
+  assert.deepEqual(split.map((p) => p.start), [0, 195, 390, 405]);
+  assert.equal(split[1].temperature, 17);
+  assert.equal(splitPeriod(periods, 1).length, 3);
+  assert.deepEqual(splitPeriod(periods, 2).map((p) => p.start), [0, 390, 405, 930]);
+});
+test('day choices map to Scheduler weekdays and keep custom selections', () => {
+  assert.equal(dayChoice(DAYS.slice(0, 5)), 'work');
+  assert.equal(dayChoice(['sun', 'sat']), 'weekend');
+  assert.equal(dayChoice([...DAYS]), 'all');
+  assert.equal(dayChoice(['workday']), 'workday');
+  assert.equal(dayChoice(['weekend']), 'free');
+  assert.equal(dayChoice(['mon', 'wed']), 'custom');
+  assert.deepEqual(choiceDays('free', DAYS), ['weekend']);
+  assert.deepEqual(choiceDays('custom', ['mon', 'wed']), ['mon', 'wed']);
+  assert.deepEqual(choiceDays('custom', ['workday']), DAYS.slice(0, 5));
+});
+test('favourite temperatures are the most used values of the room, ascending', () => {
+  const { schedule, entity } = fixture();
+  const fav = favoriteTemperatures([schedule], entity, [
+    { start: 0, temperature: 21 },
+    { start: 60, temperature: 19 },
+    { start: 120, temperature: 5, mode: 'off' },
+  ]);
+  assert.deepEqual(fav, [17, 19, 21]);
+  assert.deepEqual(favoriteTemperatures([schedule], 'climate.other'), []);
 });

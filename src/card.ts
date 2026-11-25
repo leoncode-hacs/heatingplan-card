@@ -27,6 +27,10 @@ import {
   supportsMode,
   toDraft,
   validateDraft,
+  splitPeriod,
+  dayChoice,
+  choiceDays,
+  favoriteTemperatures,
 } from './model.ts';
 import {
   calendarKey,
@@ -74,6 +78,7 @@ interface EditSession {
   original?: Schedule;
   error: string;
   discard: boolean;
+  customDays?: boolean;
 }
 class HeatingPlanCard extends HTMLElement {
   private root = this.attachShadow({ mode: 'open' });
@@ -113,6 +118,8 @@ class HeatingPlanCard extends HTMLElement {
     this.root.addEventListener('change', (event) => this.change(event));
     this.root.addEventListener('input', (event) => this.input(event));
     this.root.addEventListener('keydown', (event) => this.key(event as KeyboardEvent));
+    this.root.addEventListener('touchstart', (event) => this.swipeStart(event as TouchEvent), { passive: true });
+    this.root.addEventListener('touchend', (event) => this.swipeEnd(event as TouchEvent), { passive: true });
   }
   setConfig(config: CardConfig) {
     if (!config || config.type !== 'custom:heatingplan-card')
@@ -312,7 +319,7 @@ class HeatingPlanCard extends HTMLElement {
       later: 'Keine Schaltung in den nächsten 7 Tagen',
       next: '',
     };
-    return `<main class="overview" aria-label="Gesamtübersicht aller Räume"><div class="between overview-head"><div><p class="eyebrow">Alle Räume</p><h2>Als Nächstes</h2><p class="muted">Die nächste geplante Schaltung pro Raum, nach Uhrzeit sortiert.</p></div><button class="btn small" data-action="overview">Zur Raumansicht</button></div><div class="overview-list">${rows
+    return `<main class="overview" aria-label="Gesamtübersicht aller Räume"><div class="between overview-head"><div><p class="eyebrow">Alle Räume</p><h2>Als Nächstes</h2><p class="muted overview-intro">Die nächste geplante Schaltung pro Raum, nach Uhrzeit sortiert.</p></div><button class="btn small" data-action="overview">Zur Raumansicht</button></div><div class="overview-list">${rows
       .map((row) => {
         const event = row.next;
         const when = event
@@ -342,7 +349,7 @@ class HeatingPlanCard extends HTMLElement {
               const unknown = ['unknown', 'unavailable'].includes(this.hass.states[plan.entity_id]?.state);
               const enabled = isEnabled(plan, this.hass);
               const days = dayLabel(plan.weekdays) || 'Besondere Tagesregeln';
-              return `<article class="recurring-plan ${!enabled && !unknown ? 'paused' : ''}"><div class="recurring-copy"><strong>${escape(plan.name || 'Heizplan')}</strong><small>${showRooms ? `${escape(roomNames)} · ` : ''}${escape(days)}</small>${plan.start_date || plan.end_date ? `<small>Zeitraum: ${escape(plan.start_date || 'offen')} bis ${escape(plan.end_date || 'offen')}</small>` : ''}</div><span class="pill ${unknown ? 'warn' : ''}">${unknown ? 'Status unklar' : enabled ? 'Aktiv' : 'Pausiert'}</span>${!editProblem(plan) ? `<button class="btn small" data-action="edit" data-id="${escape(plan.schedule_id)}" aria-label="Wiederkehrenden Plan ${escape(plan.name || 'Heizplan')} bearbeiten">${icon('edit')} Bearbeiten</button>` : '<small>Sonderregeln</small>'}</article>`;
+              return `<article class="recurring-plan ${!enabled && !unknown ? 'paused' : ''}"><div class="recurring-copy"><strong>${escape(plan.name || 'Heizplan')}</strong><small>${showRooms ? `${escape(roomNames)} · ` : ''}${escape(days)}</small>${plan.start_date || plan.end_date ? `<small>Zeitraum: ${escape(plan.start_date || 'offen')} bis ${escape(plan.end_date || 'offen')}</small>` : ''}</div><span class="pill ${unknown ? 'warn' : ''}">${unknown ? 'Status unklar' : enabled ? 'Aktiv' : 'Pausiert'}</span>${!editProblem(plan) ? `<button class="btn small" data-action="edit" data-id="${escape(plan.schedule_id)}" aria-label="Wiederkehrenden Plan ${escape(plan.name || 'Heizplan')} bearbeiten">${icon('edit')}<span class="btn-label"> Bearbeiten</span></button>` : '<small>Sonderregeln</small>'}</article>`;
             })
             .join('')}</div>`
         : '<p class="recurring-empty muted">Keine wiederkehrenden Pläne vorhanden.</p>'
@@ -372,24 +379,34 @@ class HeatingPlanCard extends HTMLElement {
     const unavailable = ['unavailable', 'unknown'].includes(room.state.state);
     return `<section class="hero"><div class="hero-title"><div class="row" style="margin-bottom:5px"><p class="eyebrow">Raumübersicht</p></div><h2>${escape(room.name)}</h2><small>${escape(room.detail)}</small><div class="readings"><div class="reading"><small>Raumtemperatur</small><strong>${temperature(room.state.attributes.current_temperature)} <span>${escape(this.unit())}</span></strong></div><div class="reading"><small>Aktuell eingestellt</small><strong>${room.state.state === 'off' ? 'Aus' : `${temperature(room.state.attributes.temperature)} <span>${escape(this.unit())}</span>`}</strong></div></div></div><div style="text-align:right"><span class="pill ${unavailable ? 'warn' : ''}">${unavailable ? 'Nicht erreichbar' : room.state.state !== 'off' && room.state.attributes.hvac_action === 'heating' ? `${icon('heat')} Heizt gerade` : room.state.state === 'off' ? 'Heizung aus' : active.length ? 'Heizplan aktiv' : 'Kein aktiver Plan'}</span><br><button class="btn small" style="margin-top:14px" data-action="quick" ${unavailable || this.busy ? 'disabled' : ''}>Heizung steuern</button></div></section>
     <div class="next">${icon('clock')}<span>${overlap ? 'Mehrere Pläne sind gleichzeitig aktiv. Bitte prüfe die Heizzeiten.' : next ? this.nextText(next) : active.length ? 'Die nächste Schaltung wird vom aktiven Heizplan bestimmt.' : 'Ohne aktiven Heizplan bleibt die eingestellte Temperatur bestehen.'}</span></div>
-    <div class="between week-head"><div><p class="eyebrow">${weekLabel} · KW ${week.week} · ${week.year}</p><p class="week-range">${shortDate(dates[0])}${dates[0].slice(0, 4)} – ${shortDate(dates[6])}${dates[6].slice(0, 4)}</p><h3>${DAY_NAMES[this.day]}, ${shortDate(date)}</h3></div><div class="week-navigation"><button class="btn quiet small" data-action="previous-week" aria-label="Vorherige Woche">‹</button><button class="btn small today-button" data-action="today">Heute</button><button class="btn quiet small" data-action="next-week" aria-label="Nächste Woche">›</button></div></div><div class="day-tabs" role="group" aria-label="Wochentag">${DAYS.map((_, i) => `<button class="day-tab ${i === this.day ? 'active' : ''}" data-action="day" data-index="${i}" aria-pressed="${i === this.day}">${SHORT_DAYS[i]}<small>${shortDate(dates[i])}</small>${dates[i] === localDate(this.hass) ? '<span class="today"></span>' : ''}</button>`).join('')}</div>
+    <div class="between week-head"><div><p class="eyebrow">${weekLabel} · KW ${week.week} · ${week.year}</p><p class="week-range">${shortDate(dates[0])}${dates[0].slice(0, 4)} – ${shortDate(dates[6])}${dates[6].slice(0, 4)}</p><h3>${DAY_NAMES[this.day]}, ${shortDate(date)}</h3></div><div class="week-navigation"><button class="btn quiet small" data-action="previous-week" aria-label="Vorherige Woche">‹</button>${this.weekOffset !== 0 || this.day !== currentClock(this.hass).day ? '<button class="btn small today-button" data-action="today">Heute</button>' : ''}<button class="btn quiet small" data-action="next-week" aria-label="Nächste Woche">›</button></div></div><div class="day-tabs" role="group" aria-label="Wochentag">${DAYS.map((_, i) => `<button class="day-tab ${i === this.day ? 'active' : ''}" data-action="day" data-index="${i}" aria-pressed="${i === this.day}">${SHORT_DAYS[i]}<small>${shortDate(dates[i])}</small>${dates[i] === localDate(this.hass) ? '<span class="today"></span>' : ''}</button>`).join('')}</div>
     <div class="week-grid" aria-label="Wochenübersicht">${dates.map((date, i) => this.weekColumn(all, date, i)).join('')}</div>
     ${visible.length ? visible.map((plan) => this.planHtml(plan, scheduleDay(plan, date, this.calendar))).join('') : `<div class="empty-state">${icon('sun')}<h3>Kein Heizplan vorhanden</h3><p>Für ${DAY_NAMES[this.day]}, ${shortDate(date)} ist kein Heizplan zugeordnet.</p><button class="btn primary" data-action="new-day">${icon('plus')} Heizzeiten festlegen</button></div>`}
     ${this.recurringHtml(all)}
     <p class="footnote">Ein pausierter Plan schaltet die Heizung nicht aus. Deine Zeitpläne laufen in Home Assistant weiter, auch wenn du diese Ansicht schließt.</p>`;
   }
-  private nextText(next: { minutes: number; temperature: number; off: boolean }) {
+  private nextParts(next: { minutes: number; temperature: number; off: boolean }) {
     const now = currentClock(this.hass),
       total = now.minute + next.minutes,
       days = Math.floor(total / 1440),
       day = days === 0 ? '' : days === 1 ? 'Morgen ' : `${SHORT_DAYS[(now.day + days) % 7]} `,
-      value = next.off ? 'Heizung aus' : `${temperature(next.temperature)} ${escape(this.unit())}`,
-      hours = Math.floor(next.minutes / 60),
-      distance =
+      hours = Math.floor(next.minutes / 60);
+    return {
+      when: `${day}${clock(total % 1440)}`,
+      value: next.off ? 'Heizung aus' : `${temperature(next.temperature)} ${escape(this.unit())}`,
+      distance:
         next.minutes < 1440
           ? `in ${hours ? `${hours} Std. ` : ''}${next.minutes % 60} Min.`
-          : `in ${Math.floor(next.minutes / 1440)} Tagen`;
-    return `Nächste Änderung <strong>${day}${clock(total % 1440)} → ${value}</strong> · ${distance}`;
+          : `in ${Math.floor(next.minutes / 1440)} Tagen`,
+    };
+  }
+  private nextText(next: { minutes: number; temperature: number; off: boolean }) {
+    const parts = this.nextParts(next);
+    return `Nächste Änderung <strong>${parts.when} → ${parts.value}</strong> · ${parts.distance}`;
+  }
+  private roomNext(room: string) {
+    const active = this.schedules.filter((s) => targets(s).includes(room) && isEnabled(s, this.hass));
+    return active.some(usesWorkday) ? undefined : nextChange(this.schedules, this.hass, room);
   }
   private weekColumn(plans: Schedule[], date: string, day: number) {
     const visible = plans.filter((s) => scheduleDay(s, date, this.calendar) !== 'no');
@@ -433,7 +450,11 @@ class HeatingPlanCard extends HTMLElement {
   }
   private editorHtml(session: EditSession) {
     const draft = session.draft,
-      range = limits(this.hass, draft.entity);
+      range = limits(this.hass, draft.entity),
+      choice = session.customDays ? 'custom' : dayChoice(draft.weekdays),
+      favorites = favoriteTemperatures(this.schedules, draft.entity, draft.periods).filter(
+        (value) => value >= range.min && value <= range.max,
+      );
     return `<dialog class="sheet" role="dialog" aria-modal="true" aria-labelledby="edit-title"><section class="dialog"><header class="dialog-head"><div><p class="eyebrow">Heizzeiten gestalten</p><h2 id="edit-title">${session.original ? 'Heizplan bearbeiten' : 'Neuer Heizplan'}</h2></div><button class="btn quiet" data-action="close" aria-label="Editor schließen" ${this.busy ? 'disabled' : ''}>${icon('close')}</button></header><div class="dialog-body" ${this.busy ? 'inert' : ''}>${
       session.original
         ? `<div class="fixed-fields"><div><small>Name</small><strong class="fixed-name">${escape(draft.name.trim() || 'Heizplan (ohne Namen)')}</strong></div><div><small>Thermostat</small><strong>${escape(this.rooms().find((r) => r.id === draft.entity)?.name || draft.entity)}</strong></div><p class="helper">Name und Thermostat sind fest. Über „Kopieren“ legst du den Plan unter neuem Namen an.</p></div>`
@@ -443,9 +464,22 @@ class HeatingPlanCard extends HTMLElement {
                 `<option value="${escape(r.id)}" ${r.id === draft.entity ? 'selected' : ''}>${escape(r.name)} · ${escape(r.detail)}</option>`,
             )
             .join('')}</select></label></div>`
-    }<h3>Für welche Tage?</h3><label class="field" style="margin-top:10px">Tagesauswahl<select data-field="calendar"><option value="days" ${!draft.weekdays.some((day) => ['workday', 'weekend'].includes(day)) ? 'selected' : ''}>Wochentage selbst wählen</option><option value="workday" ${draft.weekdays.includes('workday') ? 'selected' : ''}>Arbeitstage nach Arbeitskalender</option><option value="weekend" ${draft.weekdays.includes('weekend') ? 'selected' : ''}>Freie Tage nach Arbeitskalender</option></select></label>${draft.weekdays.some((day) => ['workday', 'weekend'].includes(day)) ? '<p class="helper">Feiertage und freie Tage bestimmt dein Arbeitskalender in Home Assistant.</p>' : ''}<div class="day-choice">${DAYS.map((day, i) => `<label><input type="checkbox" data-day="${day}" ${draft.weekdays.includes(day) ? 'checked' : ''} ${draft.weekdays.some((d) => ['workday', 'weekend'].includes(d)) ? 'disabled' : ''}><span>${SHORT_DAYS[i]}</span></label>`).join('')}</div><div class="presets"><button class="preset" data-action="preset" data-preset="work">Mo–Fr</button><button class="preset" data-action="preset" data-preset="weekend">Sa–So</button><button class="preset" data-action="preset" data-preset="all">Jeden Tag</button></div><div class="between"><h3>Wie warm soll es sein?</h3><small>${draft.periods.length} Abschnitte</small></div><p class="helper">Jede Einstellung gilt ab der Uhrzeit bis zum nächsten Abschnitt. Temperaturen in ${escape(this.unit())}.</p>${draft.periods.map((period, i) => this.periodHtml(period, i, draft)).join('')}<button class="btn quiet" style="margin-top:12px" data-action="add-period" ${draft.periods.length >= 24 ? 'disabled' : ''}>${icon('plus')} Abschnitt hinzufügen</button><div class="notice">${session.original ? 'Änderungen an einem aktiven Plan können sofort die Temperatur anpassen.' : 'Mit dem Speichern wird dieser Plan aktiviert. Die passende Einstellung wird sofort angewendet.'} Die letzte Einstellung gilt bis 24:00 Uhr.</div></div><footer class="dialog-footer"><div class="inline-error footer-error" role="alert" id="edit-error" ${session.error ? '' : 'hidden'}>${escape(session.error)}</div>${session.discard ? '<span>Änderungen verwerfen?</span><div class="actions"><button class="btn" data-action="keep">Weiter bearbeiten</button><button class="btn primary" data-action="discard">Verwerfen</button></div>' : `<div class="actions"><button class="btn" data-action="close" ${this.busy ? 'disabled' : ''}>Abbrechen</button><button class="btn primary" data-action="save" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Wird gespeichert …' : 'Heizplan speichern'}</button></div>`}</footer></section></dialog>`;
+    }<h3>Für welche Tage?</h3><label class="field" style="margin-top:10px">Tagesauswahl<select data-field="calendar">${(
+      [
+        ['work', 'Montag bis Freitag'],
+        ['weekend', 'Samstag und Sonntag'],
+        ['all', 'Jeden Tag'],
+        ['workday', 'Arbeitstage laut Arbeitskalender'],
+        ['free', 'Freie Tage laut Arbeitskalender'],
+        ['custom', 'Eigene Auswahl'],
+      ] as const
+    )
+      .map(([value, label]) => `<option value="${value}" ${value === choice ? 'selected' : ''}>${label}</option>`)
+      .join(
+        '',
+      )}</select></label>${choice === 'workday' || choice === 'free' ? '<p class="helper">Feiertage und freie Tage bestimmt dein Arbeitskalender in Home Assistant.</p>' : ''}${choice === 'custom' ? `<div class="day-choice">${DAYS.map((day, i) => `<label><input type="checkbox" data-day="${day}" ${draft.weekdays.includes(day) ? 'checked' : ''}><span>${SHORT_DAYS[i]}</span></label>`).join('')}</div>` : ''}<div class="between"><h3>Wie warm soll es sein?</h3><small>${draft.periods.length} Abschnitte</small></div><p class="helper">Jede Einstellung gilt ab der Uhrzeit bis zum nächsten Abschnitt. Temperaturen in ${escape(this.unit())}.</p><div class="edit-timeline-wrap" aria-hidden="true"><div class="edit-timeline">${this.timelineHtml(draft)}</div><div class="timeline-scale"><span>0</span><span>6</span><span>12</span><span>18</span><span>24 Uhr</span></div></div><div class="edit-periods">${draft.periods.map((period, i) => this.periodHtml(period, i, draft, favorites)).join('')}</div><button class="btn quiet" style="margin-top:12px" data-action="add-period" ${draft.periods.length >= 24 ? 'disabled' : ''}>${icon('plus')} Abschnitt hinzufügen</button><div class="notice">${session.original ? 'Änderungen an einem aktiven Plan können sofort die Temperatur anpassen.' : 'Mit dem Speichern wird dieser Plan aktiviert. Die passende Einstellung wird sofort angewendet.'} Die letzte Einstellung gilt bis 24:00 Uhr.</div></div><footer class="dialog-footer"><div class="inline-error footer-error" role="alert" id="edit-error" ${session.error ? '' : 'hidden'}>${escape(session.error)}</div>${session.discard ? '<span>Änderungen verwerfen?</span><div class="actions"><button class="btn" data-action="keep">Weiter bearbeiten</button><button class="btn primary" data-action="discard">Verwerfen</button></div>' : `<div class="actions"><button class="btn" data-action="close" ${this.busy ? 'disabled' : ''}>Abbrechen</button><button class="btn primary" data-action="save" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Wird gespeichert …' : 'Heizplan speichern'}</button></div>`}</footer></section></dialog>`;
   }
-  private periodHtml(period: Period, i: number, draft: Draft) {
+  private periodHtml(period: Period, i: number, draft: Draft, favorites: number[] = []) {
     const range = limits(this.hass, draft.entity);
     const off = period.mode === 'off';
     const canOff =
@@ -453,7 +487,25 @@ class HeatingPlanCard extends HTMLElement {
     const stop = draft.periods[i + 1]?.start ?? 1440;
     const chip = (mode: 'heat' | 'off', label: string, enabled = true) =>
       `<button class="mode-chip ${(mode === 'off') === off ? 'active' : ''}" data-action="period-mode" data-index="${i}" data-value="${mode}" aria-pressed="${(mode === 'off') === off}" ${enabled ? '' : 'disabled title="Dieses Thermostat unterstützt den Aus-Modus nicht"'}>${label}</button>`;
-    return `<div class="edit-period ${off ? 'is-off' : ''}"><div class="period-when"><input type="time" value="${clock(period.start)}" step="60" data-start="${i}" aria-label="Beginn Abschnitt ${i + 1}" ${i === 0 ? 'disabled' : ''}><span class="period-end" data-end="${i}">bis ${clock(stop)}</span></div><div class="period-mode" role="group" aria-label="Betrieb Abschnitt ${i + 1}">${chip('heat', 'Heizen')}${chip('off', 'Aus', canOff)}</div>${off ? '<p class="off-period">Heizung aus</p>' : `<div class="stepper"><button data-action="step" data-index="${i}" data-delta="-1" aria-label="Abschnitt ${i + 1} kälter">−</button><input type="number" value="${period.temperature}" min="${range.min}" max="${range.max}" step="${range.step}" data-temperature="${i}" aria-label="Temperatur Abschnitt ${i + 1} in ${escape(this.unit())}"><button data-action="step" data-index="${i}" data-delta="1" aria-label="Abschnitt ${i + 1} wärmer">+</button></div>`}<button class="delete" data-action="remove-period" data-index="${i}" aria-label="Abschnitt ${i + 1} entfernen" ${i === 0 ? 'disabled' : ''}>${icon('bin')}</button></div>`;
+    return `<div class="edit-period ${off ? 'is-off' : ''}"><div class="period-when"><input type="time" value="${clock(period.start)}" step="60" data-start="${i}" aria-label="Beginn Abschnitt ${i + 1}" ${i === 0 ? 'disabled' : ''}><span class="period-end" data-end="${i}">bis ${clock(stop)}</span></div><div class="period-mode" role="group" aria-label="Betrieb Abschnitt ${i + 1}">${chip('heat', 'Heizen')}${chip('off', 'Aus', canOff)}</div>${off ? '<p class="off-period">Heizung aus</p>' : `<div class="stepper"><button data-action="step" data-index="${i}" data-delta="-1" aria-label="Abschnitt ${i + 1} kälter">−</button><input type="number" value="${period.temperature}" min="${range.min}" max="${range.max}" step="${range.step}" data-temperature="${i}" aria-label="Temperatur Abschnitt ${i + 1} in ${escape(this.unit())}"><button data-action="step" data-index="${i}" data-delta="1" aria-label="Abschnitt ${i + 1} wärmer">+</button></div>`}${!off && favorites.length > 1 ? `<div class="favorites" role="group" aria-label="Schnellwahl Abschnitt ${i + 1}">${favorites.map((value) => `<button class="fav-chip ${value === period.temperature ? 'active' : favorites.filter((other) => other !== period.temperature).indexOf(value) >= 2 ? 'extra' : ''}" data-action="set-temperature" data-index="${i}" data-value="${value}" aria-label="Abschnitt ${i + 1} auf ${temperature(value)} ${escape(this.unit())}" aria-pressed="${value === period.temperature}">${temperature(value)}°</button>`).join('')}</div>` : ''}<button class="delete" data-action="remove-period" data-index="${i}" aria-label="Abschnitt ${i + 1} entfernen" ${i === 0 ? 'disabled' : ''}>${icon('bin')}</button>${draft.periods.length < 24 && stop - period.start >= 30 ? `<button class="insert-period" data-action="insert-period" data-index="${i}" aria-label="Abschnitt zwischen ${clock(period.start)} und ${clock(stop)} einfügen" title="Abschnitt einfügen">${icon('plus')}</button>` : ''}</div>`;
+  }
+  private timelineHtml(draft: Draft) {
+    return draft.periods
+      .map((p, i) => {
+        const stop = draft.periods[i + 1]?.start ?? 1440,
+          length = stop - p.start;
+        if (!Number.isFinite(length) || length <= 0) return '';
+        const off = p.mode === 'off';
+        return `<span class="tl-seg ${off ? 'off' : p.temperature >= 20 ? 'warm' : 'cool'}" style="flex:${length} 1 0">${length >= 150 ? (off ? 'Aus' : `${temperature(p.temperature)}°`) : ''}</span>`;
+      })
+      .join('');
+  }
+  private updateTimeline() {
+    const timeline = this.root.querySelector('.edit-timeline');
+    if (!timeline || !this.edit) return;
+    const periods = this.edit.draft.periods;
+    if (periods.some((p, i) => !Number.isFinite(p.start) || (i > 0 && p.start <= periods[i - 1].start))) return;
+    timeline.innerHTML = this.timelineHtml(this.edit.draft);
   }
   private deleteHtml() {
     return `<dialog class="sheet" role="dialog" aria-modal="true" aria-labelledby="delete-title"><section class="dialog" style="max-width:460px;height:auto"><header class="dialog-head"><h2 id="delete-title">Heizplan löschen?</h2></header><div class="dialog-body"><p><strong>${escape(this.deletion!.schedule.name || 'Heizplan')}</strong> wird dauerhaft gelöscht. Die aktuell eingestellte Raumtemperatur bleibt bestehen.</p><p class="helper">Du kannst den Plan stattdessen pausieren, wenn du ihn später wieder verwenden möchtest.</p><div role="alert" class="inline-error">${escape(this.deletion!.error)}</div></div><footer class="dialog-footer"><button class="btn" data-action="close" ${this.busy ? 'disabled' : ''}>Behalten</button><button class="btn primary" data-action="confirm-delete" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Wird gelöscht …' : 'Endgültig löschen'}</button></footer></section></dialog>`;
@@ -463,7 +515,9 @@ class HeatingPlanCard extends HTMLElement {
       range = limits(this.hass, room.id);
     const off = this.quick!.mode === 'off';
     const hasPlan = this.schedules.some((s) => targets(s).includes(room.id) && isEnabled(s, this.hass));
-    return `<dialog class="sheet" role="dialog" aria-modal="true" aria-labelledby="quick-title"><section class="dialog quick-dialog"><header class="dialog-head"><div><p class="eyebrow">${escape(room.name)}</p><h2 id="quick-title">Heizung steuern</h2></div><button class="btn quiet" data-action="close" aria-label="Schließen" ${this.busy ? 'disabled' : ''}>${icon('close')}</button></header><div class="dialog-body" ${this.busy ? 'inert' : ''}><div class="mode-buttons" role="group" aria-label="Heizungsbetrieb"><button class="btn ${off ? '' : 'primary'}" data-action="quick-mode" data-mode="heat" aria-pressed="${!off}" ${room.state.state === 'off' && !supportsMode(this.hass, room.id, 'heat') ? 'disabled' : ''}>Heizen</button><button class="btn ${off ? 'primary' : ''}" data-action="quick-mode" data-mode="off" aria-pressed="${off}" ${supportsMode(this.hass, room.id, 'off') ? '' : 'disabled'}>Heizung aus</button></div>${off ? '<p class="off-period">Die Heizung wird ausgeschaltet.</p>' : `<div class="stepper quick-stepper"><button data-action="quick-step" data-delta="-1" aria-label="Kälter">−</button><input type="number" data-field="quick" value="${this.quick!.value}" min="${range.min}" max="${range.max}" step="${range.step}" aria-label="Zieltemperatur"><button data-action="quick-step" data-delta="1" aria-label="Wärmer">+</button></div>`}<p class="helper">${hasPlan ? 'Ein aktiver Heizplan kann die Heizung später wieder einschalten oder die Temperatur ändern.' : 'Die Einstellung bleibt bestehen, bis du sie änderst oder eine andere Steuerung eingreift.'} Der Heizplan wird dabei nicht bearbeitet.</p><div class="inline-error" role="alert">${escape(this.quick!.error)}</div></div><footer class="dialog-footer"><button class="btn" data-action="close" ${this.busy ? 'disabled' : ''}>Abbrechen</button><button class="btn primary" data-action="quick-save" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Wird eingestellt …' : off ? 'Heizung ausschalten' : 'Temperatur einstellen'}</button></footer></section></dialog>`;
+    const upcoming = this.roomNext(room.id),
+      next = upcoming ? this.nextParts(upcoming) : undefined;
+    return `<dialog class="sheet" role="dialog" aria-modal="true" aria-labelledby="quick-title"><section class="dialog quick-dialog"><header class="dialog-head"><div><p class="eyebrow">${escape(room.name)}</p><h2 id="quick-title">Heizung steuern</h2></div><button class="btn quiet" data-action="close" aria-label="Schließen" ${this.busy ? 'disabled' : ''}>${icon('close')}</button></header><div class="dialog-body" ${this.busy ? 'inert' : ''}><div class="mode-buttons" role="group" aria-label="Heizungsbetrieb"><button class="btn ${off ? '' : 'primary'}" data-action="quick-mode" data-mode="heat" aria-pressed="${!off}" ${room.state.state === 'off' && !supportsMode(this.hass, room.id, 'heat') ? 'disabled' : ''}>Heizen</button><button class="btn ${off ? 'primary' : ''}" data-action="quick-mode" data-mode="off" aria-pressed="${off}" ${supportsMode(this.hass, room.id, 'off') ? '' : 'disabled'}>Heizung aus</button></div>${off ? '<p class="off-period">Die Heizung wird ausgeschaltet.</p>' : `<div class="stepper quick-stepper"><button data-action="quick-step" data-delta="-1" aria-label="Kälter">−</button><input type="number" data-field="quick" value="${this.quick!.value}" min="${range.min}" max="${range.max}" step="${range.step}" aria-label="Zieltemperatur"><button data-action="quick-step" data-delta="1" aria-label="Wärmer">+</button></div>`}<p class="helper quick-until">${next ? `Gilt bis <strong>${next.when}</strong>. Dann übernimmt der Heizplan: <strong>${next.value}</strong>.` : hasPlan ? 'Ein aktiver Heizplan kann die Heizung später wieder einschalten oder die Temperatur ändern.' : 'Die Einstellung bleibt bestehen, bis du sie änderst oder eine andere Steuerung eingreift.'} Der Heizplan selbst wird nicht geändert.</p><div class="inline-error" role="alert">${escape(this.quick!.error)}</div></div><footer class="dialog-footer"><button class="btn" data-action="close" ${this.busy ? 'disabled' : ''}>Abbrechen</button><button class="btn primary" data-action="quick-save" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Wird eingestellt …' : off ? 'Heizung ausschalten' : 'Temperatur einstellen'}</button></footer></section></dialog>`;
   }
   private focusDialog() {
     queueMicrotask(() =>
@@ -489,13 +543,16 @@ class HeatingPlanCard extends HTMLElement {
     if (!this.edit) return;
     const d = this.edit.draft;
     if (el.dataset.field === 'name') d.name = el.value;
-    if (el.dataset.temperature !== undefined)
+    if (el.dataset.temperature !== undefined) {
       d.periods[Number(el.dataset.temperature)].temperature = el.valueAsNumber;
+      this.updateTimeline();
+    }
     if (el.dataset.start !== undefined) {
       const i = Number(el.dataset.start);
       d.periods[i].start = minutes(el.value);
       const end = this.root.querySelector(`[data-end="${i - 1}"]`);
       if (end && Number.isFinite(d.periods[i].start)) end.textContent = `bis ${clock(d.periods[i].start)}`;
+      this.updateTimeline();
     }
   }
   private change(event: Event) {
@@ -508,13 +565,16 @@ class HeatingPlanCard extends HTMLElement {
     }
     if (!this.edit) return;
     if (el.dataset.day) {
+      this.edit.customDays = true;
       const days = this.edit.draft.weekdays;
       this.edit.draft.weekdays = DAYS.filter((day) =>
         day === el.dataset.day ? el.checked : days.includes(day),
       );
     }
     if (el.dataset.field === 'calendar') {
-      this.edit.draft.weekdays = el.value === 'days' ? DAYS.slice(0, 5) : [el.value];
+      const choice = el.value as Parameters<typeof choiceDays>[0];
+      this.edit.customDays = choice === 'custom';
+      this.edit.draft.weekdays = choiceDays(choice, this.edit.draft.weekdays);
       this.render();
     }
     if (el.dataset.field === 'entity') {
@@ -544,6 +604,38 @@ class HeatingPlanCard extends HTMLElement {
         first?.focus();
       }
     }
+  }
+  private swipe?: { x: number; y: number; time: number };
+  private swipeStart(event: TouchEvent) {
+    const target = event.target as Element;
+    this.swipe =
+      event.touches.length === 1 &&
+      !this.overview &&
+      !this.edit &&
+      !this.quick &&
+      !this.deletion &&
+      target.closest('.main') &&
+      !target.closest('input, select, textarea, .day-tabs, .toggle')
+        ? { x: event.touches[0].clientX, y: event.touches[0].clientY, time: Date.now() }
+        : undefined;
+  }
+  private swipeEnd(event: TouchEvent) {
+    const start = this.swipe;
+    this.swipe = undefined;
+    if (!start || this.busy || Date.now() - start.time > 800) return;
+    const dx = event.changedTouches[0].clientX - start.x,
+      dy = event.changedTouches[0].clientY - start.y;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 2) return;
+    this.shiftDay(dx < 0 ? 1 : -1);
+  }
+  private shiftDay(delta: number) {
+    const day = this.day + delta;
+    if (day < 0 || day > 6) {
+      this.weekOffset += delta;
+      this.day = day < 0 ? 6 : 0;
+      void this.refreshCalendar();
+    } else this.day = day;
+    this.render();
   }
   private close() {
     if (this.busy) return;
@@ -635,13 +727,13 @@ class HeatingPlanCard extends HTMLElement {
       this.edit.discard = false;
       this.render();
       this.focusDialog();
-    } else if (action === 'preset' && this.edit) {
-      this.edit.draft.weekdays =
-        target.dataset.preset === 'work'
-          ? DAYS.slice(0, 5)
-          : target.dataset.preset === 'weekend'
-            ? DAYS.slice(5)
-            : [...DAYS];
+    } else if (action === 'insert-period' && this.edit) {
+      this.edit.draft.periods = splitPeriod(this.edit.draft.periods, index);
+      this.render();
+      this.root.querySelector<HTMLElement>(`[data-start="${index + 1}"]`)?.focus({ preventScroll: true });
+    } else if (action === 'set-temperature' && this.edit) {
+      const period = this.edit.draft.periods[index];
+      if (period) period.temperature = Number(target.dataset.value);
       this.render();
     } else if (action === 'period-mode' && this.edit) {
       const period = this.edit.draft.periods[index];

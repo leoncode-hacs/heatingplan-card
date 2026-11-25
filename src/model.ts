@@ -341,3 +341,54 @@ export function insertPeriod(periods: Period[]): Period[] {
   });
   return copy;
 }
+// Splits the period at `index` in half (rounded to 15 minutes). Returns the input when too short.
+export function splitPeriod(periods: Period[], index: number): Period[] {
+  const period = periods[index];
+  if (!period) return periods;
+  const stop = periods[index + 1]?.start ?? 1440;
+  const start = Math.ceil((period.start + (stop - period.start) / 2) / 15) * 15;
+  if (start <= period.start || start >= stop) return periods;
+  const copy = structuredClone(periods);
+  copy.splice(index + 1, 0, {
+    start,
+    temperature: period.temperature,
+    ...(period.mode ? { mode: period.mode } : {}),
+  });
+  return copy;
+}
+export type DayChoice = 'work' | 'weekend' | 'all' | 'workday' | 'free' | 'custom';
+export function dayChoice(weekdays: string[]): DayChoice {
+  const same = (days: string[]) =>
+    weekdays.length === days.length && days.every((day) => weekdays.includes(day));
+  if (same(['workday'])) return 'workday';
+  if (same(['weekend'])) return 'free';
+  if (same(DAYS.slice(0, 5))) return 'work';
+  if (same(DAYS.slice(5))) return 'weekend';
+  if (same(DAYS)) return 'all';
+  return 'custom';
+}
+export function choiceDays(choice: DayChoice, current: string[]): string[] {
+  if (choice === 'workday') return ['workday'];
+  if (choice === 'free') return ['weekend'];
+  if (choice === 'work') return DAYS.slice(0, 5);
+  if (choice === 'weekend') return DAYS.slice(5);
+  if (choice === 'all') return [...DAYS];
+  const plain = current.filter((day) => DAYS.includes(day));
+  return plain.length ? plain : DAYS.slice(0, 5);
+}
+// The temperatures used most often in a room's plans, offered as one-tap shortcuts.
+export function favoriteTemperatures(schedules: Schedule[], entity: string, extra: Period[] = []): number[] {
+  const counts = new Map<number, number>();
+  const add = (value: unknown) => {
+    if (typeof value === 'number' && Number.isFinite(value)) counts.set(value, (counts.get(value) || 0) + 1);
+  };
+  for (const s of schedules)
+    if (targets(s).includes(entity))
+      for (const slot of s.timeslots) if (!slotIsOff(slot)) add(slot.actions[0]?.service_data?.temperature);
+  for (const p of extra) if (p.mode !== 'off') add(p.temperature);
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0] - b[0])
+    .slice(0, 3)
+    .map(([value]) => value)
+    .sort((a, b) => a - b);
+}
