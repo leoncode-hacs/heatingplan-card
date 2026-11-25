@@ -593,6 +593,10 @@ select {
   font-size: 15px;
   max-width: 100%;
 }
+.input[readonly] {
+  opacity: 0.7;
+  cursor: default;
+}
 .two-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;

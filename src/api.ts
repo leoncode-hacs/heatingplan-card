@@ -30,7 +30,7 @@ export class SchedulerApi {
     return response;
   }
   async save(draft: Draft, original?: Schedule): Promise<Schedule[]> {
-    const problem = validateDraft(draft, this.hass());
+    const problem = validateDraft(draft, this.hass(), original);
     if (problem) throw new Error(problem);
     const fresh = await this.list();
     let willBeActive = true;

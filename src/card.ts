@@ -421,7 +421,7 @@ class HeatingPlanCard extends HTMLElement {
   private editorHtml(session: EditSession) {
     const draft = session.draft,
       range = limits(this.hass, draft.entity);
-    return `<dialog class="sheet" role="dialog" aria-modal="true" aria-labelledby="edit-title"><section class="dialog"><header class="dialog-head"><div><p class="eyebrow">Heizzeiten gestalten</p><h2 id="edit-title">${session.original ? 'Heizplan bearbeiten' : 'Neuer Heizplan'}</h2></div><button class="btn quiet" data-action="close" aria-label="Editor schließen" ${this.busy ? 'disabled' : ''}>${icon('close')}</button></header><div class="dialog-body" ${this.busy ? 'inert' : ''}><div class="two-fields"><label class="field">Name des Plans<input class="input" data-field="name" value="${escape(draft.name)}" maxlength="80" autocomplete="off"></label><label class="field">Thermostat<select data-field="entity" ${session.original ? 'disabled' : ''}>${this.rooms()
+    return `<dialog class="sheet" role="dialog" aria-modal="true" aria-labelledby="edit-title"><section class="dialog"><header class="dialog-head"><div><p class="eyebrow">Heizzeiten gestalten</p><h2 id="edit-title">${session.original ? 'Heizplan bearbeiten' : 'Neuer Heizplan'}</h2></div><button class="btn quiet" data-action="close" aria-label="Editor schließen" ${this.busy ? 'disabled' : ''}>${icon('close')}</button></header><div class="dialog-body" ${this.busy ? 'inert' : ''}><div class="two-fields"><label class="field">Name des Plans<input class="input" data-field="name" value="${escape(draft.name)}" maxlength="80" autocomplete="off" ${session.original ? `readonly placeholder="Heizplan" aria-describedby="name-note"` : ''}>${session.original ? '<small class="helper" id="name-note">Der Name bestehender Pläne ist fest. Über „Kopieren“ legst du den Plan unter neuem Namen an.</small>' : ''}</label><label class="field">Thermostat<select data-field="entity" ${session.original ? 'disabled' : ''}>${this.rooms()
       .map(
         (r) =>
           `<option value="${escape(r.id)}" ${r.id === draft.entity ? 'selected' : ''}>${escape(r.name)} · ${escape(r.detail)}</option>`,
@@ -597,7 +597,7 @@ class HeatingPlanCard extends HTMLElement {
         if (problem) throw new Error(problem);
         const draft = toDraft(original);
         if (action === 'copy') {
-          draft.name = `${draft.name} · Kopie`.slice(0, 80);
+          draft.name = `${draft.name.trim() || 'Heizplan'} · Kopie`.slice(0, 80);
           this.openDraft(draft);
         } else this.openDraft(draft, original);
       } catch (error) {
@@ -647,7 +647,7 @@ class HeatingPlanCard extends HTMLElement {
       this.render();
     } else if (action === 'save' && this.edit) {
       const session = this.edit;
-      const problem = validateDraft(session.draft, this.hass);
+      const problem = validateDraft(session.draft, this.hass, session.original);
       if (problem) {
         session.error = problem;
         this.render();

@@ -124,3 +124,26 @@ test('readback must retain explicit heat mode after an off period', async () => 
   await assert.rejects(() => new SchedulerApi(() => b.hass).save(draft), /noch nicht bestätigt/);
   assert.equal(b.writes.length, 1);
 });
+
+test('editing a nameless plan keeps it nameless and never sends a name', async () => {
+  const { schedule } = fixture();
+  schedule.name = null;
+  const b = backend([schedule]);
+  const d = toDraft(schedule);
+  assert.equal(d.name, '');
+  d.periods[1].start = 8 * 60;
+  const result = await new SchedulerApi(() => b.hass).save(d, schedule);
+  assert.equal(b.writes.length, 1);
+  assert.ok(!('name' in b.writes[0].payload));
+  assert.equal(result[0].timeslots[1].start, '08:00:00');
+  assert.equal(result[0].name, null);
+});
+
+test('renaming an existing plan is refused before any write', async () => {
+  const { schedule } = fixture();
+  const b = backend([schedule]);
+  const d = toDraft(schedule);
+  d.name = 'Neuer Name';
+  await assert.rejects(() => new SchedulerApi(() => b.hass).save(d, schedule), /nicht geändert/);
+  assert.equal(b.writes.length, 0);
+});

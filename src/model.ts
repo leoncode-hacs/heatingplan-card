@@ -167,10 +167,18 @@ export function newDraft(entity: string, hass: Hass): Draft {
     ],
   };
 }
-export function validateDraft(draft: Draft, hass: Hass): string | null {
+// The scheduler integration (v3.3.9) removes a schedule's switch entity when its
+// name changes and never recreates it until Home Assistant restarts: the plan stops
+// running and the list keeps returning stale data. Existing plans keep their name.
+export function renamed(draft: Draft, original?: Schedule): boolean {
+  return !!original && draft.name.trim() !== (original.name || '').trim();
+}
+export function validateDraft(draft: Draft, hass: Hass, original?: Schedule): string | null {
   if (!hass.states[draft.entity] || !draft.entity.startsWith('climate.'))
     return 'Bitte wähle ein vorhandenes Thermostat.';
-  if (!draft.name.trim() || draft.name.length > 80)
+  if (renamed(draft, original))
+    return 'Der Name eines bestehenden Plans kann nicht geändert werden. Kopiere den Plan, um ihn unter neuem Namen anzulegen.';
+  if ((!original && !draft.name.trim()) || draft.name.length > 80)
     return 'Bitte gib einen Namen mit höchstens 80 Zeichen ein.';
   if (
     !draft.weekdays.length ||
@@ -211,7 +219,9 @@ export function validateDraft(draft: Draft, hass: Hass): string | null {
 }
 export function payload(draft: Draft, original?: Schedule): Record<string, unknown> {
   return {
-    name: draft.name.trim(),
+    // Never send the name when editing: any name in the request that differs from the
+    // stored value (including null vs. "") triggers the broken rename path in the backend.
+    ...(original ? {} : { name: draft.name.trim() }),
     weekdays: [...draft.weekdays],
     repeat_type: original?.repeat_type || 'repeat',
     tags: original?.tags || ['heatingplan-card'],

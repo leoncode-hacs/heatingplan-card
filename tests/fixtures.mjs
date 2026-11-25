@@ -86,6 +86,8 @@ export function backend(initial = []) {
     }
     if (path === 'scheduler/edit') {
       const index = data.findIndex((s) => s.schedule_id === payload.schedule_id);
+      // Scheduler v3.3.9 drops the switch entity on rename and keeps serving stale data.
+      if ('name' in payload && payload.name !== data[index].name) return { success: true };
       data[index] = { ...data[index], ...clone(payload), timeslots: payload.timeslots.map(normalize) };
     } else {
       const id = `new${++counter}`;
